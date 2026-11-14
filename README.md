@@ -4,6 +4,17 @@ We're in this together :)
 
 A shared care hub for families. Read [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for the full hackathon brief, scope, and judging rubric.
 
+## Approved research and planning
+
+Start with the [HandsIn planning packet](docs/planning/README.md), approved for publication on November 14, 2026:
+
+- [Product definition and feature catalog](docs/planning/01_PRODUCT_DEFINITION.md)
+- [Elder care and family research](docs/planning/02_RESEARCH.md)
+- [Architecture and shared contracts](docs/planning/03_ARCHITECTURE.md)
+- [Build packages and integration plan](docs/planning/04_BUILD_PLAN.md)
+
+The first market is the United States. All work remains unassigned. This is a documentation handoff; implementation has not been authorized under the revised plan. Teammates and their AIs should read the current-context notice in `PROJECT_CONTEXT.md` and the planning packet before starting any separately authorized work.
+
 ## Run locally
 
 Requires Node.js 22 or newer.

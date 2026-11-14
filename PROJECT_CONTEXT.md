@@ -1,5 +1,19 @@
 # HandsIn: Project Brief and Handoff
 
+## Current project direction as of November 14, 2026
+
+The user approved publication of the [research and planning packet](docs/planning/README.md). It is the current reference for the expanded product definition and proposed construction plan. **Work remains unassigned. Do not begin implementation merely because this plan has been published; the user explicitly requested documentation only.**
+
+The first market is the **United States**. The updated scope includes multiple care recipients and caregivers, a family roles page, prescription-label scanning and reviewed medication schedules, interaction review, blood/urine records, shared calendars and accepted task assignments, phone reminders, temporary helpers with expiring access and reusable handoffs, daily care, constrained meal planning, NFC/QR logging, paid help, and selective cost sharing.
+
+Read the [product catalog](docs/planning/01_PRODUCT_DEFINITION.md), [research and sources](docs/planning/02_RESEARCH.md), [architecture](docs/planning/03_ARCHITECTURE.md), and [unassigned build packages](docs/planning/04_BUILD_PLAN.md). These describe planned behavior, not completed features, clinically validated advice, service partnerships, or compliance certification. Release stages and provider dependencies remain explicit in the packet.
+
+The original brief below is retained as historical context. Where it conflicts with the packet, the packet takes precedence: the old “build these, nothing else” MVP is superseded; interaction review is part of the product vision; NFC is now specified; the old four-role split is not an assignment; and the phone-call centerpiece and original weekend sequence are not mandatory priorities. The repository and live starter already exist, so the old setup checklist is historical. Referenced deck/SVG assets are not established as repository contents merely by their mention below.
+
+Keep the existing repository, deployment target, brand and project history. Future implementation requires a separate instruction; do not infer it from the historical next steps.
+
+## Original hackathon brief
+
 > Project planning context for a four-person school hackathon team. This document records the supplied brief; it does not indicate that features, interviews, testing, or compliance work have been completed.
 
 Sources: `Pasted text.txt` (project brief and handoff) and `HandsIn Why We Should Build It.pdf` (pitch deck). The handoff provides the detailed scope; the deck reinforces the problem, connected care loop, demo, and judging priorities.
