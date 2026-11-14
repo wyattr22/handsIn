@@ -4,6 +4,8 @@ We're in this together :)
 
 A shared care hub for families. Read [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for the full hackathon brief, scope, and judging rubric.
 
+**Live app:** [handsin-six.vercel.app](https://handsin-six.vercel.app)
+
 ## Approved research and planning
 
 Start with the [HandsIn planning packet](docs/planning/README.md), approved for publication on November 14, 2026:
@@ -31,12 +33,10 @@ npm run typecheck
 npm run build
 ```
 
-## Deploy to Vercel
+## Deployment
 
-1. Sign in to Vercel with GitHub and select **Add New → Project**.
-2. Import `wyattr22/handsIn`. Allow the Vercel GitHub app access to this repository if prompted.
-3. Use the detected **Next.js** preset and the repository root directory. No environment variables are required for this initial page.
-4. Deploy. Copy the project's **production domain** from Settings → Domains for the demo link.
-5. Keep this Vercel project connected to the GitHub repository, with `main` as the production branch. Every push to `main` updates the same production domain. Preview deployment URLs are specific to individual builds.
+HandsIn is deployed on Vercel at [handsin-six.vercel.app](https://handsin-six.vercel.app).
+
+The Vercel project is connected to this GitHub repository. Pushes to `main` update the production deployment, while pull requests and other branches can receive their own preview deployments.
 
 This initial version is a branded starting page. Care circles, medication tracking, AI calls, and other planned features have not been implemented yet. Add service credentials through Vercel environment variables as those integrations are built; never commit credentials.
