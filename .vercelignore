@@ -6,3 +6,4 @@
 .calendar-test-build/
 .integration-test-build/
 public/scanner-assets/
+.backend-handoff/

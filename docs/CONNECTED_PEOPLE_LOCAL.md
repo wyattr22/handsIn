@@ -1,5 +1,7 @@
 # Connected People and Access: local milestone
 
+Historical milestone notes below. For another computer, start with [TEAMMATE_START_HERE.md](TEAMMATE_START_HERE.md); the current connected feature scope is [CONNECTED_WORKSPACE.md](CONNECTED_WORKSPACE.md). The current native runner reads ignored `.local-tools/` in this checkout, not the older relative tools path below, and applies both People and workspace migration sets. The teammate handoff uses a hosted preview backend instead of these machine-specific binaries.
+
 Implemented and verified locally on November 14, 2026; approved for publication to the People branch and integration branch. No hosted schema, Auth settings, or Vercel configuration was changed.
 
 ## Open and try

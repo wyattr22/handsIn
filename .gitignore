@@ -13,3 +13,4 @@ out/
 .local-tools/
 .people-test-output/
 public/scanner-assets/
+.backend-handoff/
