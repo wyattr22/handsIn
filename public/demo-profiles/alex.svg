@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
-  <title id="title">Illustrated portrait of Alex</title>
-  <rect width="160" height="160" rx="80" fill="#dcefeb"/>
-  <circle cx="80" cy="66" r="34" fill="#bd8065"/>
-  <path d="M45 63c1-28 16-43 37-43 24 0 38 17 37 45-12-8-22-17-28-28-9 14-24 23-46 26Z" fill="#50625c"/>
-  <path d="M27 160c5-38 24-58 53-58s49 20 53 58Z" fill="#2f766d"/>
-  <circle cx="68" cy="68" r="3" fill="#283633"/><circle cx="94" cy="68" r="3" fill="#283633"/>
-  <path d="M70 84c7 6 15 6 22 0" fill="none" stroke="#7b493b" stroke-width="3" stroke-linecap="round"/>
-</svg>
