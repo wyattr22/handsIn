@@ -1,17 +1,29 @@
-const areas = [
-  { number: "01", title: "A little less guessing.", text: "Keep medications and daily care in one shared place, with the whole family in the loop.", label: "Medications" },
-  { number: "02", title: "Someone’s got Thursday.", text: "Coordinate appointments and make it clear who’s taking your loved one.", label: "Appointments" },
-  { number: "03", title: "Go in feeling prepared.", text: "Bring care notes, lab questions, and the family’s observations to the next doctor visit.", label: "Doctor prep" },
-];
+import Link from "next/link";
+import { AppShell } from "@/components/app/AppShell";
+import { getCareRecipients } from "@/lib/care/recipients";
+import { createClient } from "@/lib/supabase/server";
 
-export default function Home() {
-  return <main>
-    <header className="nav"><a className="wordmark" href="/" aria-label="HandsIn home">Hands<span>In</span><i aria-hidden="true">✳</i></a><nav className="nav-link" aria-label="Feature previews"><a href="/medications">Medications</a><a href="/health">Health records</a></nav></header>
-    <section className="hero">
-      <div className="hero-copy"><p className="eyebrow"><span className="dot" /> A little help. A lot of heart.</p><h1>Care is a<br />team effort<span className="period">.</span></h1><p className="intro">One shared place for families caring for someone they love. So nothing gets missed, and no one carries it alone.</p><a className="button" href="#the-plan">Meet HandsIn <span aria-hidden="true">↓</span></a><p className="build-note">Hackathon build in progress · This is our starting point.</p></div>
-      <div className="art" role="img" aria-label="Four colorful hands coming together around a heart, representing a family sharing care"><div className="art-orbit"/><span className="spark spark-one">✳</span><span className="spark spark-two">✦</span><div className="hand hand-red"/><div className="hand hand-blue"/><div className="hand hand-orange"/><div className="hand hand-yellow"/><div className="heart">♥</div><span className="art-caption">WE’RE IN THIS TOGETHER.</span></div>
-    </section>
-    <section id="the-plan" className="plan"><div className="section-heading"><p className="eyebrow">One circle. Everyone connected.</p><h2>Less back-and-forth.<br />More being there.</h2><p>We’re building a shared care hub for the everyday things that matter.</p></div><div className="cards">{areas.map(area => <article key={area.number}><div className="card-top"><span>{area.number}</span><span>{area.label}</span></div><h3>{area.title}</h3><p>{area.text}</p></article>)}</div></section>
-    <footer><a className="wordmark" href="/">Hands<span>In</span></a><p>When Dad needs care, everyone puts their hands in.</p><span>Built with care.</span></footer>
-  </main>;
+export default async function TodayPage() {
+  const [recipients, supabase] = await Promise.all([getCareRecipients(), createClient()]);
+  const { data: { user } } = await supabase.auth.getUser();
+  const recipient = recipients[0];
+  const userInitials = user?.email?.slice(0, 2).toUpperCase() ?? "HI";
+
+  return <AppShell recipientName={recipient?.name ?? "Dad"} recipientInitials={recipient?.initials ?? "D"} userInitials={userInitials}>
+    <p className="app-eyebrow">Today’s care plan</p>
+    <h1 className="app-title">Good morning.<br />Here’s what matters today.</h1>
+    <p className="app-lede">One view for medications, appointments, health records, and the people helping with care.</p>
+    {!user && <div className="app-notice"><strong>You’re viewing the connected prototype.</strong> <Link href="/login">Sign in</Link> to use your private care circle across every feature.</div>}
+
+    <div className="app-section-heading"><h2>Care at a glance</h2><span /></div>
+    <div className="app-grid">
+      <Link className="app-card" href="/medications"><span className="app-card-icon">✚</span><strong>Medications</strong><p>Scan labels, confirm directions, and build reviewed schedules.</p><span className="app-card-link">Open cabinet →</span></Link>
+      <Link className="app-card" href="/health"><span className="app-card-icon">▤</span><strong>Health records</strong><p>Review test results and prepare questions for the next visit.</p><span className="app-card-link">Open records →</span></Link>
+      <Link className="app-card" href="/calendar"><span className="app-card-icon">□</span><strong>Calendar</strong><p>Coordinate appointments, tasks, and accepted caregiver coverage.</p><span className="app-card-link">View calendar →</span></Link>
+      <Link className="app-card" href="/people"><span className="app-card-icon">◉</span><strong>Care circle</strong><p>{recipients.length ? `${recipients.length} care recipient${recipients.length === 1 ? "" : "s"} connected.` : "Create a circle and invite the people who help."}</p><span className="app-card-link">Manage people →</span></Link>
+    </div>
+
+    <div className="app-section-heading"><h2>Important boundary</h2></div>
+    <div className="app-card wide"><strong>Review before saving</strong><p>Scanned medication labels and health reports are drafts until a person checks them against the original. HandsIn organizes information; it does not diagnose or replace a clinician or pharmacist.</p></div>
+  </AppShell>;
 }

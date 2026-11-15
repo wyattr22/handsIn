@@ -1,11 +1,20 @@
-import Link from 'next/link';
-import styles from '../../src/features/coordination/calendar.module.css';
+import Link from "next/link";
+import { AppShell } from "@/components/app/AppShell";
+import { getCareRecipients } from "@/lib/care/recipients";
+import { createClient } from "@/lib/supabase/server";
 
-export const metadata = { title: 'Calendar & delegation — HandsIn' };
-export default function CalendarPage() {
-  return <main className={styles.shell}>
-    <header className={styles.header}><Link href="/" className="wordmark">Hands<span>In</span></Link><span>Calendar & delegation</span></header>
-    <section className={styles.intro}><p className={styles.eyebrow}>One circle. Everyone connected.</p><h1>A little clarity.<br />A lot more care.</h1><p>Plan appointments, share responsibilities, and see who has accepted each task.</p></section>
-    <section className={styles.notice}><h2>Shared calendar setup is pending</h2><p>The people, authentication, and database services are not connected on this branch yet. Your family’s calendar will appear here once those services are ready.</p><Link className={styles.primary} href="/calendar/demo">Explore the fictional demo →</Link><p>The demo uses fictional people and resets when you leave. It does not send reminders or save real care records.</p></section>
-  </main>;
+export const metadata = { title: "Calendar & delegation — HandsIn" };
+
+export default async function CalendarPage() {
+  const [recipients, supabase] = await Promise.all([getCareRecipients(), createClient()]);
+  const { data: { user } } = await supabase.auth.getUser();
+  const recipient = recipients[0];
+  return <AppShell recipientName={recipient?.name ?? "Dad"} recipientInitials={recipient?.initials ?? "D"} userInitials={user?.email?.slice(0, 2).toUpperCase() ?? "HI"}>
+    <p className="app-eyebrow">Family calendar</p>
+    <h1 className="app-title">A little clarity.<br />A lot more care.</h1>
+    <p className="app-lede">Plan appointments, share responsibilities, and distinguish requested help from accepted coverage.</p>
+    <div className="app-section-heading"><h2>Upcoming</h2><Link href="/calendar/demo">Open calendar preview</Link></div>
+    <div className="app-empty"><h2>Shared saving comes next</h2><p>The complete calendar and delegation workflow is built and tested with fictional data. Its Supabase persistence adapter still needs to be connected before real family events are stored.</p><Link className="app-primary" href="/calendar/demo">Explore the calendar</Link></div>
+    <div className="app-notice"><strong>Preview boundary.</strong> Changes in the calendar preview reset when the page reloads and do not notify caregivers.</div>
+  </AppShell>;
 }

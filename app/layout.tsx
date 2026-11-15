@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./app-shell.css";
 import "./medications.css";
 import "./health.css";
 

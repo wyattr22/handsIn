@@ -2,9 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useHealthFlow } from "@/components/health/HealthFlowProvider";
-import { healthRecipients } from "@/lib/health/types";
 
 export default function HealthRecipientPage() {
-  const router = useRouter(); const { draft, updateDraft } = useHealthFlow();
-  return <section className="health-page"><div className="health-title"><p>Add a health record</p><h1>Whose report is this?</h1><span>Select the person before uploading any health information.</span></div><div className="health-recipient-list">{healthRecipients.map((recipient) => <button key={recipient.id} className={draft.recipientId === recipient.id ? "selected" : ""} onClick={() => updateDraft({ recipientId: recipient.id })}><i>{recipient.initials}</i><span><strong>{recipient.name}</strong><small>{recipient.relationship}</small></span><b>{draft.recipientId === recipient.id ? "✓" : "›"}</b></button>)}</div><div className="health-actions"><button className="health-primary" disabled={!draft.recipientId} onClick={() => router.push("/health/new/upload")}>Continue</button></div></section>;
+  const router = useRouter(); const { draft, updateDraft, recipients, isDemoMode } = useHealthFlow();
+  return <section className="health-page"><div className="health-title"><p>Add a health record</p><h1>Whose report is this?</h1><span>Select the person before uploading any health information.</span></div><div className="health-recipient-list">{recipients.map((recipient) => <button key={recipient.id} className={draft.recipientId === recipient.id ? "selected" : ""} onClick={() => updateDraft({ recipientId: recipient.id })}><i>{recipient.initials}</i><span><strong>{recipient.name}</strong><small>{recipient.relationship}</small></span><b>{draft.recipientId === recipient.id ? "✓" : "›"}</b></button>)}</div>{isDemoMode && <p className="health-safety"><strong>Sample recipients</strong><br />Sign in and create a care circle to use real people across medications and health records.</p>}<div className="health-actions"><button className="health-primary" disabled={!draft.recipientId} onClick={() => router.push("/health/new/upload")}>Continue</button></div></section>;
 }
