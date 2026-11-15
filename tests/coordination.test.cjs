@@ -190,3 +190,111 @@ test('idempotent retry cannot bypass a revoked permission', () => {
   s.grants.filter(g => g.actorId === 'sarah').forEach(g => { g.revokedAt = now; });
   assert.throws(() => applyCommand(s, command, ctx), errorCode('FORBIDDEN'));
 });
+
+test('accepted backups never count as primary coverage or receive dose/task due reminders', () => {
+  const original = makeFixtures(now);
+  const requested = applyCommand(original, { type: 'requestAssignment', taskId: 't-ride', helperId: 'ben', priority: 1, expectedVersion: 1 }, context());
+  const s = respond(requested.state, requested.resultId).state;
+  assert.equal(coverage(s, s.tasks[0]), 'uncovered');
+  assert.ok(!s.outbox.some(e => e.kind === 'task_due' && e.status === 'pending'));
+  assert.throws(() => outcome(s, 't-ride'), errorCode('FORBIDDEN'));
+});
+test('primary and secondary requests coexist, and primary coverage remains until explicit backup promotion is accepted', () => {
+  let r = request(makeFixtures(now), 't-ride', 'sarah'); let s = respond(r.state, r.resultId, 'accepted', 'sarah').state;
+  r = applyCommand(s, { type: 'requestAssignment', taskId: 't-ride', helperId: 'ben', priority: 1, expectedVersion: s.tasks[0].version }, context());
+  s = respond(r.state, r.resultId).state;
+  assert.equal(s.assignments.filter(a => a.taskId === 't-ride' && a.status === 'accepted').length, 2);
+  r = request(s, 't-ride', 'ben');
+  assert.ok(r.state.assignments.some(a => a.helperId === 'sarah' && a.status === 'accepted'));
+  s = respond(r.state, r.resultId).state;
+  assert.equal(s.assignments.filter(a => a.taskId === 't-ride' && a.status === 'accepted').length, 1);
+  assert.equal(s.assignments.find(a => a.taskId === 't-ride' && a.status === 'accepted').helperId, 'ben');
+});
+test('requesting another role preserves unrelated pending requests and their notification eligibility', () => {
+  let r = request(makeFixtures(now), 't-ride', 'ben');
+  const s = applyCommand(r.state, { type: 'requestAssignment', taskId: 't-ride', helperId: 'maya', priority: 1, expectedVersion: r.state.tasks[0].version }, context()).state;
+  assert.equal(s.assignments.filter(a => a.taskId === 't-ride' && a.status === 'requested').length, 2);
+  assert.equal(s.outbox.filter(e => e.taskId === 't-ride' && e.kind === 'assignment_requested' && shouldDispatch(s, e.id, now)).length, 2);
+  assert.throws(() => applyCommand(s, { type: 'requestAssignment', taskId: 't-ride', helperId: 'maya', priority: 2, expectedVersion: s.tasks[0].version }, context()), errorCode('VALIDATION_FAILED'));
+});
+test('additional backup priorities are bounded and do not grant recipient access', () => {
+  const s = makeFixtures(now);
+  for (const priority of [-1, 1.5, 6]) assert.throws(() => applyCommand(s, { type: 'requestAssignment', taskId: 't-ride', helperId: 'maya', priority, expectedVersion: 1 }, context()), errorCode('VALIDATION_FAILED'));
+  assert.throws(() => applyCommand(s, { type: 'requestAssignment', taskId: 't-ride', helperId: 'guest', priority: 2, expectedVersion: 1 }, context()), errorCode('FORBIDDEN'));
+});
+test('follow-ups must reference an earlier authorized appointment for the same recipient', () => {
+  const s = makeFixtures(now); const original = s.visits[0];
+  const { id, circleId, version, canceled, ...fields } = original;
+  const c = { type: 'createVisit', input: { ...fields, title: 'Follow-up', followUpOf: id, start: '2026-12-01T18:00:00Z', end: '2026-12-01T19:00:00Z' } };
+  assert.equal(applyCommand(s, c, context()).state.visits.at(-1).followUpOf, id);
+  assert.throws(() => applyCommand(s, { ...c, input: { ...c.input, recipientId: 'r-june' } }, context()), errorCode('VALIDATION_FAILED'));
+  assert.throws(() => applyCommand(s, { ...c, input: { ...c.input, start: '2026-10-01T18:00:00Z', end: '2026-10-01T19:00:00Z' } }, context()), errorCode('VALIDATION_FAILED'));
+});
+
+const { monthDays, weekDays, movePeriod, daysInMonth, entriesOnDay, layoutTimedEvents } = require('../.calendar-test-build/features/coordination/calendarMath.js');
+const entry = (id, start, end, extra = {}) => ({ id, title: id, recipientId: 'r-alex', kind: 'appointment', timezone: 'America/Los_Angeles', start, end, canceled: false, ...extra });
+test('month grid aligns weekdays, includes adjacent dates and leap days', () => {
+  const days = monthDays('2024-02-15');
+  assert.equal(days.length, 35);
+  assert.equal(days[0], '2024-01-28');
+  assert.ok(days.includes('2024-02-29'));
+  assert.equal(daysInMonth('2024-02-01'), 29);
+  assert.equal(daysInMonth('2025-02-01'), 28);
+  assert.equal(monthDays('2026-05-01').length, 42);
+  assert.deepEqual(weekDays('2026-11-14'), ['2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14']);
+});
+test('period navigation crosses years and clamps month/year leap boundaries', () => {
+  assert.equal(movePeriod('2026-12-31', 'month', 1), '2027-01-31');
+  assert.equal(movePeriod('2026-01-31', 'month', 1), '2026-02-28');
+  assert.equal(movePeriod('2024-02-29', 'year', 1), '2025-02-28');
+  assert.equal(movePeriod('2026-12-31', 'week', 1), '2027-01-07');
+  assert.equal(movePeriod('2026-01-01', 'day', -1), '2025-12-31');
+});
+test('events ending at midnight do not appear on the next day; all-day dates retain recipient meaning', () => {
+  const e = entry('midnight', '2026-11-15T06:00:00Z', '2026-11-15T08:00:00Z');
+  assert.equal(entriesOnDay([e], '2026-11-14', 'America/Los_Angeles').length, 1);
+  assert.equal(entriesOnDay([e], '2026-11-15', 'America/Los_Angeles').length, 0);
+  const allDay = entry('all', '2026-11-14T08:00:00Z', '2026-11-16T08:00:00Z', { allDay: true });
+  assert.equal(entriesOnDay([allDay], '2026-11-15', 'Asia/Tokyo').length, 1);
+  assert.equal(entriesOnDay([allDay], '2026-11-16', 'Asia/Tokyo').length, 0);
+});
+test('time grids assign separate lanes for overlapping events and reset lanes afterward', () => {
+  const items = [entry('a', '2026-11-14T18:00:00Z', '2026-11-14T20:00:00Z'), entry('b', '2026-11-14T19:00:00Z', '2026-11-14T21:00:00Z'), entry('c', '2026-11-14T23:00:00Z', '2026-11-15T00:00:00Z')];
+  const laid = layoutTimedEvents(items, '2026-11-14', 'America/Los_Angeles');
+  assert.equal(laid[0].startMinute, 600);
+  assert.equal(laid[0].columns, 2);
+  assert.notEqual(laid[0].column, laid[1].column);
+  assert.equal(laid[2].columns, 1);
+});
+test('time grids split multi-day entries and separate all-day items from timed layout', () => {
+  const items = [entry('overnight', '2026-11-15T07:00:00Z', '2026-11-15T10:00:00Z'), entry('all', '2026-11-14T08:00:00Z', '2026-11-15T08:00:00Z', { allDay: true })];
+  assert.equal(layoutTimedEvents(items, '2026-11-14', 'America/Los_Angeles')[0].endMinute, 1440);
+  assert.equal(layoutTimedEvents(items, '2026-11-15', 'America/Los_Angeles')[0].startMinute, 0);
+  assert.equal(layoutTimedEvents(items, '2026-11-14', 'America/Los_Angeles').length, 1);
+});
+
+test('rescheduling a visit requires explicit linked-care confirmation and renews assignments atomically', () => {
+  let r = request(makeFixtures(now)); let s = respond(r.state, r.resultId).state;
+  const { id, circleId, version, canceled, ...input } = s.visits[0];
+  const c = { type: 'editVisit', id, expectedVersion: version, input: { ...input, start: '2026-11-14T20:00:00Z', end: '2026-11-14T21:00:00Z' } };
+  assert.throws(() => applyCommand(s, c, context()), errorCode('VALIDATION_FAILED'));
+  const updated = applyCommand(s, { ...c, rescheduleLinkedTasks: true }, context()).state;
+  assert.equal(updated.tasks[0].start, '2026-11-14T19:30:00.000Z');
+  assert.equal(coverage(updated, updated.tasks[0]), 'uncovered');
+  assert.ok(updated.outbox.filter(e => e.kind === 'task_due').every(e => e.status === 'invalidated'));
+  assert.ok(updated.audit.some(e => e.taskId === 't-ride' && e.action === 'editVisit'));
+  assert.equal(s.visits[0].start, input.start, 'failed or successful transitions never mutate input state');
+});
+test('all-day task flags persist through recurrence and one-occurrence edits', () => {
+  let r = applyCommand(makeFixtures(now), { type: 'createTask', input: input({ start: '2026-11-15T08:00:00Z', end: '2026-11-16T08:00:00Z', allDay: true, recurrence: { frequency: 'daily', count: 2 } }) }, context());
+  assert.ok(r.state.tasks.filter(t => t.seriesId).every(t => t.allDay));
+  const t = r.state.tasks.find(t => t.id === r.resultId);
+  r = applyCommand(r.state, { type: 'editTask', taskId: t.id, expectedVersion: t.version, scope: 'one', title: 'Timed instead', start: '2026-11-15T17:00:00Z', end: '2026-11-15T18:00:00Z', allDay: false }, context());
+  assert.equal(r.state.tasks.find(other => other.id === t.id).allDay, false);
+});
+test('failed linked-care rescheduling preserves the complete original visit and assignments', () => {
+  const s = makeFixtures(now); s.tasks[0].instructionId = 'i-missing'; s.tasks[0].instructionVersion = 1;
+  const before = structuredClone(s); const { id, circleId, version, canceled, ...input } = s.visits[0];
+  assert.throws(() => applyCommand(s, { type: 'editVisit', id, expectedVersion: version, rescheduleLinkedTasks: true, input: { ...input, start: '2026-11-14T20:00:00Z', end: '2026-11-14T21:00:00Z' } }, context()), errorCode('VERSION_CONFLICT'));
+  assert.deepEqual(s, before);
+});

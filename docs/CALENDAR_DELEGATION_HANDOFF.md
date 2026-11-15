@@ -4,7 +4,7 @@
 
 Implemented on `codex/calendar-and-delegation`, based on `8a454de`. The user separately authorized this module after publication of the documentation-only planning packet. No other work package is assigned by this implementation.
 
-**Partially integrated.** This branch provides domain logic, proposed typed contracts, a responsive day/seven-day calendar, forms, and a fictional workflow demo. It does not provide production authentication, shared database persistence, SMS delivery, temporary-grant creation, or medication administration. No real care records should be entered. Main and its landing page are unchanged.
+**Partially integrated.** This branch provides domain logic, proposed typed contracts, interactive Day/Week/Month/Year calendar views, event editing, primary/backup delegation, and a fictional workflow demo. It does not provide production authentication, shared database persistence, SMS delivery, temporary-grant creation, or medication administration. No real care records should be entered. Main and its landing page are unchanged.
 
 - `/calendar`: production setup/availability page; exposes no recipient data.
 - `/calendar/demo`: explicit fictional, in-memory demo. Persona switching is not authentication. Reloading clears changes; sessions do not synchronize.
@@ -12,7 +12,10 @@ Implemented on `codex/calendar-and-delegation`, based on `8a454de`. The user sep
 ## Implemented behavior
 
 - Appointment/visit creation, editing and cancellation; separate linked task windows and transport tasks.
-- Multiple recipients, day and seven-day views, date navigation, filters, coverage and overdue labels.
+- Multiple recipients; hourly Day/Week grids; selectable Month dates; twelve-month Year overview; date navigation and optional filters.
+- All-day items, overlapping-event lanes, multi-day rendering, selected-day schedules, and a simple list alternative.
+- Primary, secondary, and ordered additional-backup requests. Backups do not count as primary coverage or automatically take over.
+- Linked follow-up appointments and explicit rescheduling of unresolved linked care tasks with renewed acceptance.
 - Task creation, daily/weekly recurrence (1–30 occurrences), one/this-and-future edits and cancellation.
 - Requests, intended-helper acceptance/decline, cancellation, replacement without prematurely removing accepted coverage.
 - Overlap/unavailability checks on acceptance, capability-unknown warnings, privacy-safe conflict messages.
@@ -49,7 +52,7 @@ No database migrations are included because the shared identity/recipient schema
 
 Store instants with UTC/offset and recipient IANA timezone. Date inputs resolve in recipient-local time; daily/weekly occurrences preserve that wall time across DST. Ambiguous/nonexistent local times fail with a review error instead of choosing a hidden offset. Contemporary offsets in 15-minute increments are supported; historical timezone conversion is not a feature.
 
-Recurrence is bounded and materialized immediately; there is no infinite background expansion. Editing one occurrence retains its series identity. Editing this-and-future unresolved occurrences preserves relative calendar spacing using the selected new local start/end; completed/refused/canceled history is not rewritten. Atomic failure leaves the original series unchanged, including on DST errors. Changing a visit time with unresolved linked tasks is blocked: explicitly reschedule those tasks rather than silently moving accepted care.
+Recurrence is bounded and materialized immediately; there is no infinite background expansion. Editing one occurrence retains its series identity. Editing this-and-future unresolved occurrences preserves relative calendar spacing using the selected new local start/end; completed/refused/canceled history is not rewritten. Atomic failure leaves the original series unchanged, including on DST errors. Changing a visit time with unresolved linked care requires explicit rescheduleLinkedTasks confirmation. The transaction preserves before/after offsets, revalidates current instructions and scopes, retires old reminders and assignments, and asks caregivers to accept again. Any failure rejects the whole operation.
 
 ## Verify locally
 
@@ -70,14 +73,14 @@ Verified November 14, 2026: all 22 domain tests passed, repository typecheck pas
 Manual fictional workflow:
 
 1. Open `/calendar`; confirm setup is pending and no recipient data is shown.
-2. Open `/calendar/demo`; use Sarah, create a task, optionally link a visit/instruction.
-3. Request Ben, observe pending coverage, switch to Ben and accept.
+2. Open `/calendar/demo`; choose Add event and select appointment, follow-up, visit or care task.
+3. Request Ben as primary, observe pending coverage, use Demo tools to switch to Ben, open the event and accept.
 4. Record completion or inability; switch back and inspect status/history.
 5. Request Sarah as a replacement; existing coverage persists until Sarah accepts.
-6. Try week view, recipient/status filters, recurring edits/cancellation, and mobile/keyboard dialogs.
+6. Try Day/Week/Month/Year, optional recipient/coverage filters, backups, recurring edits/cancellation, and mobile/keyboard dialogs.
 7. Switch to Unrelated account; no recipient records should appear.
 
-These steps do not prove shared persistence or authentication. The required two-authenticated-session demonstration, direct server API/RLS tests, real reminder delivery and expiry invalidation in a connected client must be run after the adapters are integrated. Do not describe the synthetic demonstration as passing those checks.
+These steps do not prove shared persistence or authentication. The required two-authenticated-session demonstration, direct server API/RLS tests, real reminder delivery and expiry invalidation in a connected client must be run after the adapters are integrated. Do not describe the synthetic demonstration as passing those checks. See `CALENDAR_REDESIGN.md` for the current visual redesign, contract additions and 35-test verification; the earlier 22-test result above records the initial implementation.
 
 ## Remaining boundaries
 

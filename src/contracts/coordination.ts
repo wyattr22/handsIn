@@ -13,13 +13,16 @@ export interface Visit {
   id: string; circleId: string; recipientId: string; title: string; kind: 'appointment' | 'visit';
   start: string; end: string; timezone: string; location: string; provider: string; notes: string;
   version: number; canceled: boolean;
+  allDay?: boolean; followUpOf?: string;
 }
 export interface Task {
   id: string; circleId: string; recipientId: string; title: string; category: string;
   start: string; end: string; timezone: string; visitId?: string; instructionId?: string; instructionVersion?: number;
   medicationOccurrenceId?: string; seriesId?: string; status: TaskStatus; version: number;
+  allDay?: boolean;
 }
-export interface Assignment { id: string; taskId: string; helperId: string; requestedBy: string; status: AssignmentStatus; version: number; createdAt: string }
+/** priority: 0/omitted = primary, 1 = secondary, 2+ = ordered additional backups. Never an access grant. */
+export interface Assignment { id: string; taskId: string; helperId: string; requestedBy: string; status: AssignmentStatus; version: number; createdAt: string; priority?: number }
 export interface AuditEvent { id: string; taskId?: string; visitId?: string; actorId: string; at: string; action: string; instructionVersion?: number; detail: string }
 export interface NotificationEvent {
   id: string; taskId: string; targetId: string; kind: 'assignment_requested' | 'assignment_responded' | 'task_changed' | 'task_due' | 'coverage_gap';
@@ -33,18 +36,19 @@ export interface CoordinationState {
 export interface CreateTaskInput {
   recipientId: string; title: string; category: string; start: string; end: string; timezone: string;
   visitId?: string; instructionId?: string;
+  allDay?: boolean;
   recurrence?: { frequency: 'daily' | 'weekly'; count: number };
 }
 export type CoordinationCommand =
   | { type: 'createTask'; input: CreateTaskInput }
   | { type: 'createVisit'; input: Omit<Visit, 'id' | 'circleId' | 'version' | 'canceled'> }
-  | { type: 'editVisit'; id: string; expectedVersion: number; input: Omit<Visit, 'id' | 'circleId' | 'version' | 'canceled'> }
+  | { type: 'editVisit'; id: string; expectedVersion: number; input: Omit<Visit, 'id' | 'circleId' | 'version' | 'canceled'>; rescheduleLinkedTasks?: boolean }
   | { type: 'cancelVisit'; id: string; expectedVersion: number }
-  | { type: 'requestAssignment'; taskId: string; helperId: string; expectedVersion: number }
+  | { type: 'requestAssignment'; taskId: string; helperId: string; expectedVersion: number; priority?: number }
   | { type: 'respondAssignment'; id: string; expectedVersion: number; response: 'accepted' | 'declined' }
   | { type: 'cancelAssignment'; id: string; expectedVersion: number }
   | { type: 'outcome'; taskId: string; expectedVersion: number; status: Exclude<TaskStatus, 'open' | 'canceled'>; detail: string }
-  | { type: 'editTask'; taskId: string; expectedVersion: number; scope: 'one' | 'future'; title: string; start: string; end: string; instructionVersion?: number }
+  | { type: 'editTask'; taskId: string; expectedVersion: number; scope: 'one' | 'future'; title: string; start: string; end: string; instructionVersion?: number; allDay?: boolean }
   | { type: 'cancelTask'; taskId: string; expectedVersion: number; scope: 'one' | 'future' };
 export interface MutationContext { actorId: string; now: string; idempotencyKey: string; newId: () => string }
 export interface Conflict { kind: 'overlap' | 'unavailable' | 'capability_unknown'; message: string }

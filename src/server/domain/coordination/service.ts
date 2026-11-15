@@ -2,6 +2,7 @@ import type { Assignment, CoordinationCommand, CoordinationState, CoordinationVi
 import { addLocalDays, CoordinationError, localToInstant, overlaps, parts, validateInterval } from './time';
 
 const closed = new Set(['completed', 'declined_by_recipient', 'canceled']);
+export const assignmentPriority = (assignment: Assignment) => assignment.priority ?? 0;
 const fail = (code: string, message: string): never => { throw new CoordinationError(code, message); };
 function text(value: unknown, label: string, max = 2000): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > max) fail('VALIDATION_FAILED', `${label} is required (maximum ${max} characters).`);
@@ -33,7 +34,8 @@ function coordinators(s: CoordinationState, t: Task, now: string) {
 }
 function reminder(s: CoordinationState, t: Task, ctx: MutationContext) {
   if (closed.has(t.status)) return;
-  const accepted = s.assignments.find(a => a.taskId === t.id && a.status === 'accepted');
+  for (const pending of s.assignments.filter(a => a.taskId === t.id && a.status === 'requested')) event(s, t, ctx, 'assignment_requested', pending.helperId);
+  const accepted = s.assignments.find(a => a.taskId === t.id && a.status === 'accepted' && assignmentPriority(a) === 0);
   if (accepted) event(s, t, ctx, 'task_due', accepted.helperId, t.start);
   else for (const coordinator of coordinators(s, t, ctx.now)) event(s, t, ctx, 'coverage_gap', coordinator);
 }
@@ -45,7 +47,7 @@ export function assignmentConflicts(s: CoordinationState, actorId: string, task:
   const conflicts: Conflict[] = [];
   if (!helper.categories.includes(task.category)) conflicts.push({ kind: 'capability_unknown', message: 'Willingness/training for this task is not recorded. Review before assigning.' });
   if (helper.unavailable.some(w => overlaps(w, task))) conflicts.push({ kind: 'unavailable', message: 'Unavailable during this time.' });
-  for (const a of s.assignments.filter(a => a.helperId === helperId && a.status === 'accepted' && a.taskId !== task.id)) {
+  for (const a of s.assignments.filter(a => a.helperId === helperId && a.status === 'accepted' && assignmentPriority(a) === 0 && a.taskId !== task.id)) {
     const other = taskFor(s, a.taskId);
     if (closed.has(other.status) || !overlaps(other, task)) continue;
     let detail = 'Unavailable: another accepted commitment overlaps.';
@@ -93,6 +95,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     case 'createTask': {
       const input = c.input;
       text(input.title, 'Task title', 160); text(input.category, 'Task category', 80);
+      if (input.allDay !== undefined && typeof input.allDay !== 'boolean') fail('VALIDATION_FAILED', 'Invalid all-day setting.');
       validateInterval(input.start, input.end, input.timezone);
       if (input.timezone !== recipient.timezone) fail('VALIDATION_FAILED', 'Use the recipient timezone for care tasks.');
       const visit = input.visitId && s.visits.find(v => v.id === input.visitId && v.recipientId === recipientId && v.circleId === recipient.circleId && !v.canceled);
@@ -107,7 +110,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
         const start = days ? addLocalDays(input.start, days, recipient.timezone) : input.start;
         const end = days ? addLocalDays(input.end, days, recipient.timezone) : input.end;
         validateInterval(start, end, recipient.timezone);
-        const t: Task = { id: ctx.newId(), circleId: recipient.circleId, recipientId, title: input.title.trim(), category: input.category, start, end, timezone: recipient.timezone, visitId: input.visitId, instructionId: input.instructionId, instructionVersion: instruction ? instruction.version : undefined, seriesId, status: 'open', version: 1 };
+        const t: Task = { id: ctx.newId(), circleId: recipient.circleId, recipientId, title: input.title.trim(), category: input.category, start, end, timezone: recipient.timezone, allDay: input.allDay, visitId: input.visitId, instructionId: input.instructionId, instructionVersion: instruction ? instruction.version : undefined, seriesId, status: 'open', version: 1 };
         s.tasks.push(t); reminder(s, t, ctx); resultId ||= t.id;
       }
       break;
@@ -115,6 +118,11 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     case 'createVisit': case 'editVisit': {
       const input = c.input;
       text(input.title, 'Visit title', 160);
+      if (input.allDay !== undefined && typeof input.allDay !== 'boolean') fail('VALIDATION_FAILED', 'Invalid all-day setting.');
+      if (input.followUpOf) {
+        const original = s.visits.find(v => v.id === input.followUpOf && v.recipientId === recipientId && v.circleId === recipient.circleId && !v.canceled);
+        if (!original || (c.type === 'editVisit' && original.id === c.id) || Date.parse(input.start) <= Date.parse(original.start)) fail('VALIDATION_FAILED', 'Choose an earlier appointment for the same loved one.');
+      }
       if (!['appointment', 'visit'].includes(input.kind)) fail('VALIDATION_FAILED', 'Choose appointment or visit.');
       for (const value of [input.location, input.provider, input.notes]) if (typeof value !== 'string' || value.length > 2000) fail('VALIDATION_FAILED', 'Invalid visit details.');
       validateInterval(input.start, input.end, input.timezone);
@@ -124,8 +132,22 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
       } else {
         const visit = s.visits.find(v => v.id === c.id && v.recipientId === recipientId && !v.canceled) || fail('FORBIDDEN', 'Visit unavailable.');
         current(visit, c.expectedVersion);
-        // Linked tasks have their own time windows; never silently reschedule accepted care.
-        if (s.tasks.some(t => t.visitId === visit.id && !closed.has(t.status)) && (input.start !== visit.start || input.end !== visit.end)) fail('VALIDATION_FAILED', 'Reschedule linked tasks explicitly before changing this visit time.');
+        const linked = s.tasks.filter(t => t.visitId === visit.id && !closed.has(t.status));
+        if (input.start !== visit.start || input.end !== visit.end || !!input.allDay !== !!visit.allDay) {
+          if (linked.length && c.rescheduleLinkedTasks !== true) fail('VALIDATION_FAILED', 'Confirm rescheduling linked care tasks before changing this visit time.');
+          for (const t of linked) {
+            authorize(s, ctx.actorId, t.recipientId, 'manage', ctx.now, t.id); checkInstruction(s, t);
+            if (t.recipientId !== visit.recipientId || t.circleId !== visit.circleId) fail('FORBIDDEN', 'Linked task scope mismatch.');
+            t.start = new Date(Date.parse(t.start) + Date.parse(input.start) - Date.parse(visit.start)).toISOString();
+            t.end = new Date(Date.parse(t.end) + Date.parse(input.end) - Date.parse(visit.end)).toISOString();
+            validateInterval(t.start, t.end, t.timezone);
+            if (Date.parse(t.start) === Date.parse(input.start) && Date.parse(t.end) === Date.parse(input.end)) t.allDay = input.allDay;
+            t.version++; invalidate(s, t.id);
+            const affected = s.assignments.filter(a => a.taskId === t.id && ['requested', 'accepted'].includes(a.status));
+            for (const a of affected) { a.status = 'canceled'; a.version++; event(s, t, ctx, 'task_changed', a.helperId); }
+            reminder(s, t, ctx);
+          }
+        }
         Object.assign(visit, input, { version: visit.version + 1 }); resultId = visit.id;
       }
       break;
@@ -142,15 +164,17 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     }
     case 'requestAssignment': {
       const t = task!; current(t, c.expectedVersion); checkInstruction(s, t);
+      const priority = c.priority ?? 0;
+      if (!Number.isInteger(priority) || priority < 0 || priority > 5) fail('VALIDATION_FAILED', 'Choose primary, secondary, or up to four additional backups.');
       if (closed.has(t.status)) fail('VALIDATION_FAILED', 'This task is closed.');
       authorize(s, c.helperId, t.recipientId, 'perform', ctx.now, t.id);
       if (!s.helpers.some(h => h.id === c.helperId)) fail('VALIDATION_FAILED', 'Helper unavailable.');
-      if (s.assignments.some(a => a.taskId === t.id && a.helperId === c.helperId && ['requested', 'accepted'].includes(a.status))) fail('VALIDATION_FAILED', 'This helper already has an active request.');
-      const withdrawn = s.assignments.filter(a => a.taskId === t.id && a.status === 'requested').map(a => a.helperId);
-      s.assignments.filter(a => a.taskId === t.id && a.status === 'requested').forEach(a => { a.status = 'canceled'; a.version++; });
-      assignment = { id: ctx.newId(), taskId: t.id, helperId: c.helperId, requestedBy: ctx.actorId, status: 'requested', version: 1, createdAt: ctx.now };
+      if (s.assignments.some(a => a.taskId === t.id && a.helperId === c.helperId && ['requested', 'accepted'].includes(a.status) && !(priority === 0 && assignmentPriority(a) > 0))) fail('VALIDATION_FAILED', 'This caregiver already has a role on this task.');
+      const withdrawn = s.assignments.filter(a => a.taskId === t.id && a.status === 'requested' && assignmentPriority(a) === priority).map(a => a.helperId);
+      s.assignments.filter(a => a.taskId === t.id && a.status === 'requested' && assignmentPriority(a) === priority).forEach(a => { a.status = 'canceled'; a.version++; });
+      assignment = { id: ctx.newId(), taskId: t.id, helperId: c.helperId, requestedBy: ctx.actorId, status: 'requested', version: 1, createdAt: ctx.now, priority };
       s.assignments.push(assignment); t.version++; invalidate(s, t.id); reminder(s, t, ctx);
-      event(s, t, ctx, 'assignment_requested', c.helperId); resultId = assignment.id;
+      resultId = assignment.id;
       for (const target of withdrawn) event(s, t, ctx, 'task_changed', target);
       break;
     }
@@ -159,9 +183,9 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
       if (a.helperId !== ctx.actorId || a.status !== 'requested' || closed.has(t.status)) fail('FORBIDDEN', 'Only the intended helper can respond to an open request.');
       if (!['accepted', 'declined'].includes(c.response)) fail('VALIDATION_FAILED', 'Invalid response.');
       if (c.response === 'accepted') checkInstruction(s, t);
-      if (c.response === 'accepted' && assignmentConflicts(s, ctx.actorId, t, ctx.actorId, ctx.now).some(w => w.kind !== 'capability_unknown')) fail('VALIDATION_FAILED', 'Resolve the overlapping commitment or unavailability before accepting.');
-      const replaced = c.response === 'accepted' ? s.assignments.filter(other => other.taskId === t.id && other.id !== a.id && other.status === 'accepted').map(other => other.helperId) : [];
-      if (c.response === 'accepted') s.assignments.filter(other => other.taskId === t.id && other.id !== a.id && other.status === 'accepted').forEach(other => { other.status = 'canceled'; other.version++; });
+      if (c.response === 'accepted' && assignmentPriority(a) === 0 && assignmentConflicts(s, ctx.actorId, t, ctx.actorId, ctx.now).some(w => w.kind !== 'capability_unknown')) fail('VALIDATION_FAILED', 'Resolve the overlapping commitment or unavailability before accepting.');
+      const replaced = c.response === 'accepted' ? s.assignments.filter(other => other.taskId === t.id && other.id !== a.id && other.status === 'accepted' && (assignmentPriority(other) === assignmentPriority(a) || other.helperId === a.helperId)).map(other => other.helperId) : [];
+      if (c.response === 'accepted') s.assignments.filter(other => other.taskId === t.id && other.id !== a.id && ['accepted', 'requested'].includes(other.status) && (assignmentPriority(other) === assignmentPriority(a) || other.helperId === a.helperId)).forEach(other => { other.status = 'canceled'; other.version++; });
       a.status = c.response; a.version++; t.version++; invalidate(s, t.id); reminder(s, t, ctx);
       for (const target of new Set([a.requestedBy, ...coordinators(s, t, ctx.now)])) event(s, t, ctx, 'assignment_responded', target);
       for (const target of replaced) event(s, t, ctx, 'task_changed', target);
@@ -179,11 +203,11 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
       const t = task!; current(t, c.expectedVersion); checkInstruction(s, t);
       if (t.medicationOccurrenceId || t.category === 'medication') fail('VALIDATION_FAILED', 'Record medication outcomes through the medication module.');
       if (closed.has(t.status)) fail('ALREADY_RECORDED', 'Task already closed.');
-      if (!s.assignments.some(a => a.taskId === t.id && a.helperId === ctx.actorId && a.status === 'accepted')) fail('FORBIDDEN', 'Accept responsibility before recording an outcome.');
+      if (!s.assignments.some(a => a.taskId === t.id && a.helperId === ctx.actorId && a.status === 'accepted' && assignmentPriority(a) === 0)) fail('FORBIDDEN', 'Accept primary responsibility before recording an outcome.');
       if (!['in_progress', 'completed', 'declined_by_recipient', 'unable_to_complete'].includes(c.status)) fail('VALIDATION_FAILED', 'Invalid outcome.');
       text(c.detail, 'Outcome note', 1000);
       t.status = c.status; t.version++; invalidate(s, t.id);
-      if (c.status === 'unable_to_complete') { s.assignments.filter(a => a.taskId === t.id && a.status === 'accepted').forEach(a => { a.status = 'canceled'; a.version++; }); }
+      if (c.status === 'unable_to_complete') { s.assignments.filter(a => a.taskId === t.id && a.status === 'accepted' && assignmentPriority(a) === 0).forEach(a => { a.status = 'canceled'; a.version++; }); }
       reminder(s, t, ctx); break;
     }
     case 'editTask': case 'cancelTask': {
@@ -193,6 +217,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
       const affected = c.scope === 'future' && t.seriesId ? s.tasks.filter(other => other.seriesId === t.seriesId && Date.parse(other.start) >= Date.parse(t.start) && !closed.has(other.status)) : [t];
       if (c.type === 'editTask') {
         text(c.title, 'Task title', 160); validateInterval(c.start, c.end, t.timezone);
+        if (c.allDay !== undefined && typeof c.allDay !== 'boolean') fail('VALIDATION_FAILED', 'Invalid all-day setting.');
         const oldLocal = parts(t.start, t.timezone);
         const newLocal = parts(c.start, t.timezone);
         const newEndLocal = parts(c.end, t.timezone);
@@ -205,6 +230,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
             other.instructionVersion = instruction!.version;
           }
           other.title = c.title.trim();
+          if (c.allDay !== undefined) other.allDay = c.allDay;
           if (c.scope === 'one') { other.start = c.start; other.end = c.end; }
           else {
             const days = (midnight(parts(other.start, other.timezone)) - midnight(oldLocal)) / 86400000;
@@ -255,7 +281,7 @@ export function projectView(s: CoordinationState, actorId: string, now: string):
 }
 export function coverage(s: Pick<CoordinationState, 'assignments'>, t: Task) {
   if (closed.has(t.status)) return 'closed';
-  return s.assignments.some(a => a.taskId === t.id && a.status === 'accepted') ? 'accepted' : s.assignments.some(a => a.taskId === t.id && a.status === 'requested') ? 'pending' : 'uncovered';
+  return s.assignments.some(a => a.taskId === t.id && a.status === 'accepted' && assignmentPriority(a) === 0) ? 'accepted' : s.assignments.some(a => a.taskId === t.id && a.status === 'requested' && assignmentPriority(a) === 0) ? 'pending' : 'uncovered';
 }
 export function shouldDispatch(s: CoordinationState, eventId: string, now: string) {
   const e = s.outbox.find(e => e.id === eventId);
@@ -263,7 +289,7 @@ export function shouldDispatch(s: CoordinationState, eventId: string, now: strin
   const t = s.tasks.find(t => t.id === e.taskId);
   if (!t || t.version !== e.taskVersion || !s.recipients.some(r => r.id === t.recipientId && r.circleId === t.circleId)) return false;
   try { authorize(s, e.targetId, t.recipientId, 'read', now, t.id); } catch { return false; }
-  if (e.kind === 'task_due') return !closed.has(t.status) && s.assignments.some(a => a.taskId === t.id && a.helperId === e.targetId && a.status === 'accepted');
+  if (e.kind === 'task_due') return !closed.has(t.status) && s.assignments.some(a => a.taskId === t.id && a.helperId === e.targetId && a.status === 'accepted' && assignmentPriority(a) === 0);
   if (e.kind === 'assignment_requested') return !closed.has(t.status) && s.assignments.some(a => a.taskId === t.id && a.helperId === e.targetId && a.status === 'requested');
   return true;
 }

@@ -1,182 +1,122 @@
 'use client';
-
 import Link from 'next/link';
-import { useEffect, useId, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import type { CoordinationCommand, Task, Visit } from '../../contracts/coordination';
+import { useEffect, useState } from 'react';
+import type { CoordinationCommand, CoordinationState, Task } from '../../contracts/coordination';
 import { applyCommand, assignmentConflicts, authorize, coverage, projectView } from '../../server/domain/coordination/service';
 import { localToInstant, parts } from '../../server/domain/coordination/time';
+import CalendarViews, { kindLabel } from './CalendarViews';
+import CalendarDialog from './CalendarDialog';
+import EventEditor, { roleLabel } from './EventEditor';
+import CaregiverPanel from './CaregiverPanel';
+import { calendarTitle, entriesOnDay, formatDay, movePeriod, shiftDay, timeRange, weekDays } from './calendarMath';
+import type { CalendarEntry, CalendarMode } from './calendarMath';
 import { makeFixtures } from './demo/fixtures';
 import styles from './calendar.module.css';
 
-type Modal = { kind: 'task' } | { kind: 'visit' } | { kind: 'editTask' | 'assign' | 'outcome' | 'cancelTask'; task: Task } | { kind: 'editVisit' | 'cancelVisit'; visit: Visit };
-const labels: Record<string, string> = { open: 'Open', in_progress: 'In progress', completed: 'Completed', unable_to_complete: 'Needs help', declined_by_recipient: 'Declined by recipient', canceled: 'Canceled', pending: 'Awaiting acceptance', accepted: 'Accepted coverage', uncovered: 'Uncovered', closed: 'Closed', transport: 'Transport', daily_care: 'Daily care', companionship: 'Companionship', medication: 'Medication' };
-const dateLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
-function shiftDay(day: string, amount: number) { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + amount); return d.toISOString().slice(0, 10); }
-function Dialog({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const id = useId();
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    ref.current?.focus();
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = overflow; previous?.focus(); };
-  }, []);
-  return <div className={styles.overlay}><div className={styles.dialog} ref={ref} role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} onKeyDown={event => {
-    if (event.key === 'Escape') close();
-    if (event.key === 'Tab') {
-      const controls = Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,textarea,a[href]') || []);
-      const first = controls[0], last = controls[controls.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
-  }}><div className={styles.toolbar}><h2 id={id}>{title}</h2><button type="button" onClick={close} aria-label="Close dialog">✕</button></div>{children}</div></div>;
-}
-
+const active = (task: Task) => !['completed', 'declined_by_recipient', 'canceled'].includes(task.status);
 export default function CalendarDemo({ initialNow }: { initialNow: string }) {
   const [state, setState] = useState(() => makeFixtures(initialNow));
-  const [now, setNow] = useState(initialNow);
-  const [actor, setActor] = useState('sarah');
-  const [recipient, setRecipient] = useState('all');
-  const [helper, setHelper] = useState('all');
-  const [kind, setKind] = useState('all');
-  const [status, setStatus] = useState('all');
-  const [mode, setMode] = useState<'day' | 'week'>('day');
-  const [day, setDay] = useState(parts(initialNow, 'America/Los_Angeles').slice(0, 10));
-  const [modal, setModal] = useState<Modal | null>(null);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [draftRecipient, setDraftRecipient] = useState('r-alex');
-  const [draftHelper, setDraftHelper] = useState('ben');
+  const [now, setNow] = useState(initialNow), [actor, setActor] = useState('sarah');
+  const [recipient, setRecipient] = useState('all'), [filterKind, setFilterKind] = useState('all'), [filterCoverage, setFilterCoverage] = useState('all');
+  const [mode, setMode] = useState<CalendarMode>('month'), [listView, setListView] = useState(false);
+  const [selected, setSelected] = useState(parts(initialNow, 'America/Los_Angeles').slice(0, 10));
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [action, setAction] = useState<'create' | 'edit' | 'assign' | 'outcome' | 'cancel' | null>(null);
+  const [targetTaskId, setTargetTaskId] = useState(''), [draftPriority, setDraftPriority] = useState(0), [draftHelper, setDraftHelper] = useState('ben');
+  const [addHour, setAddHour] = useState<number | undefined>(), [followUp, setFollowUp] = useState<string | undefined>();
+  const [message, setMessage] = useState(''), [error, setError] = useState('');
   useEffect(() => { const timer = setInterval(() => setNow(new Date().toISOString()), 30000); return () => clearInterval(timer); }, []);
   const view = projectView(state, actor, now);
   const canManage = (recipientId: string, taskId?: string) => { try { authorize(state, actor, recipientId, 'manage', now, taskId); return true; } catch { return false; } };
-  const managedRecipients = view.recipients.filter(r => canManage(r.id));
-  const selectedRecipient = view.recipients.find(r => r.id === draftRecipient) || view.recipients[0];
-  const zone = selectedRecipient?.timezone || 'America/Los_Angeles';
-  const name = (id: string) => view.recipients.find(r => r.id === id)?.name || 'Authorized recipient';
-  const helperName = (id: string) => view.helpers.find(h => h.id === id)?.name || 'Helper';
-  const active = (t: Task) => !['completed', 'declined_by_recipient', 'canceled'].includes(t.status);
-  const overdue = (t: Task) => active(t) && Date.parse(t.end) < Date.parse(now);
-  function open(next: Modal) { setError(''); setMessage(''); setModal(next); if ('task' in next) setDraftRecipient(next.task.recipientId); if ('visit' in next) setDraftRecipient(next.visit.recipientId); }
-  function run(command: CoordinationCommand) {
-    try {
-      const result = applyCommand(state, command, { actorId: actor, now: new Date().toISOString(), idempotencyKey: crypto.randomUUID(), newId: () => crypto.randomUUID() });
-      setState(result.state); setError(''); setMessage('Updated in this fictional demo. No real notification was sent.'); setModal(null);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save. Your change was not recorded.'); }
+  const managed = view.recipients.filter(r => canManage(r.id));
+  const canAdd = recipient === 'all' ? managed.length > 0 : managed.some(r => r.id === recipient);
+  const displayZone = view.recipients.find(r => r.id === recipient)?.timezone || 'America/Los_Angeles';
+  const today = parts(now, displayZone).slice(0, 10);
+  const name = (id: string) => view.recipients.find(r => r.id === id)?.name || 'Loved one';
+  const helperName = (id: string) => view.helpers.find(h => h.id === id)?.name || 'Caregiver';
+  const allEntries: CalendarEntry[] = [
+    ...view.visits.map(v => ({ ...v, kind: v.followUpOf ? 'followup' as const : v.kind, visitId: v.id })),
+    ...view.tasks.filter(t => !t.visitId || !view.visits.some(v => v.id === t.visitId)).map(t => ({ ...t, kind: 'task' as const, taskId: t.id, canceled: t.status === 'canceled' })),
+  ];
+  const linkedTasks = (entry: CalendarEntry) => entry.taskId ? view.tasks.filter(t => t.id === entry.taskId) : view.tasks.filter(t => t.visitId === entry.visitId);
+  function coverageLabel(entry: CalendarEntry) {
+    if (entry.canceled) return 'Canceled';
+    const tasks = linkedTasks(entry), open = tasks.filter(active);
+    if (tasks.length && !open.length) return 'Care resolved';
+    if (open.length && open.every(t => coverage(state, t) === 'accepted')) return 'Covered';
+    if (open.some(t => coverage(state, t) === 'pending')) return 'Waiting for response';
+    return 'Needs a caregiver';
   }
-  function submit(form: HTMLFormElement) {
-    const data = new FormData(form);
+  const entries = allEntries.filter(e => (recipient === 'all' || e.recipientId === recipient) && (filterKind === 'all' || e.kind === filterKind) && (filterCoverage === 'all' || coverageLabel(e) === filterCoverage));
+  const entry = allEntries.find(e => e.id === selectedEntryId);
+  const task = view.tasks.find(t => t.id === (action === 'assign' || action === 'outcome' ? targetTaskId : entry?.taskId));
+  const visit = view.visits.find(v => v.id === entry?.visitId);
+  const assignedTasks = entry ? linkedTasks(entry) : [];
+  const editorRecipients = followUp ? managed.filter(r => r.id === view.visits.find(v => v.id === followUp)?.recipientId) : entry ? managed.filter(r => r.id === entry.recipientId) : recipient === 'all' ? managed : managed.filter(r => r.id === recipient);
+  function clearMessages() { setError(''); setMessage(''); }
+  function pickDate(day: string, openDay = false) { setSelected(day); if (openDay) { setMode('day'); setListView(false); } }
+  function add(day = selected, hour?: number) { clearMessages(); setSelected(day); setSelectedEntryId(null); setAddHour(hour); setFollowUp(undefined); setAction('create'); }
+  function openEntry(item: CalendarEntry) { clearMessages(); setFollowUp(undefined); setSelectedEntryId(item.id); setAction(null); }
+  function closeDialog() { setError(''); if (action) setAction(null); else setSelectedEntryId(null); }
+  function transact(work: (initial: CoordinationState, execute: (state: CoordinationState, command: CoordinationCommand) => { state: CoordinationState; resultId: string }) => { state: CoordinationState; resultId?: string }, after?: (id?: string) => void) {
+    try {
+      const execute = (s: CoordinationState, command: CoordinationCommand) => applyCommand(s, command, { actorId: actor, now: new Date().toISOString(), idempotencyKey: crypto.randomUUID(), newId: () => crypto.randomUUID() });
+      const result = work(state, execute);
+      setState(result.state); setError(''); setMessage('Saved in this demo. No real notifications were sent.'); setAction(null); setFollowUp(undefined); after?.(result.resultId);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save. Nothing was changed.'); }
+  }
+  function run(command: CoordinationCommand) { transact((s, execute) => execute(s, command)); }
+  function saveEditor(data: FormData, recipientId: string, allDay: boolean) {
     const str = (key: string) => String(data.get(key) || '');
     try {
-      if (modal?.kind === 'task') {
-        run({ type: 'createTask', input: { recipientId: draftRecipient, title: str('title'), category: str('category'), start: localToInstant(str('start'), zone), end: localToInstant(str('end'), zone), timezone: zone, visitId: str('visitId') || undefined, instructionId: str('instructionId') || undefined, recurrence: str('frequency') === 'none' ? undefined : { frequency: str('frequency') as 'daily' | 'weekly', count: Number(str('count')) } } });
-      } else if (modal?.kind === 'visit' || modal?.kind === 'editVisit') {
-        const input = { recipientId: draftRecipient, title: str('title'), kind: str('kind') as 'visit' | 'appointment', start: localToInstant(str('start'), zone), end: localToInstant(str('end'), zone), timezone: zone, location: str('location'), provider: str('provider'), notes: str('notes') };
-        run(modal.kind === 'visit' ? { type: 'createVisit', input } : { type: 'editVisit', id: modal.visit.id, expectedVersion: modal.visit.version, input });
-      } else if (modal?.kind === 'editTask') {
-        run({ type: 'editTask', taskId: modal.task.id, expectedVersion: modal.task.version, scope: str('scope') as 'one' | 'future', title: str('title'), start: localToInstant(str('start'), modal.task.timezone), end: localToInstant(str('end'), modal.task.timezone), instructionVersion: str('instructionVersion') ? Number(str('instructionVersion')) : undefined });
-      } else if (modal?.kind === 'assign') run({ type: 'requestAssignment', taskId: modal.task.id, helperId: draftHelper, expectedVersion: modal.task.version });
-      else if (modal?.kind === 'outcome') run({ type: 'outcome', taskId: modal.task.id, expectedVersion: modal.task.version, status: str('outcome') as 'completed', detail: str('detail') });
-      else if (modal?.kind === 'cancelTask') run({ type: 'cancelTask', taskId: modal.task.id, expectedVersion: modal.task.version, scope: str('scope') as 'one' | 'future' });
-      else if (modal?.kind === 'cancelVisit') run({ type: 'cancelVisit', id: modal.visit.id, expectedVersion: modal.visit.version });
-    } catch (e) { setError(e instanceof Error ? e.message : 'Invalid form.'); }
+      const zone = view.recipients.find(r => r.id === recipientId)?.timezone || displayZone;
+      const start = localToInstant(`${str('startDate')}T${allDay ? '00:00' : str('startTime')}`, zone);
+      const end = localToInstant(`${allDay ? shiftDay(str('endDate'), 1) : str('endDate')}T${allDay ? '00:00' : str('endTime')}`, zone);
+      const type = str('type'), title = str('title'), primary = str('primary'), secondary = str('secondary');
+      if (primary && primary === secondary) throw new Error('Choose different primary and secondary caregivers.');
+      transact((initial, execute) => {
+        let s = initial, resultId = '', taskIds: string[] = [];
+        if (action === 'edit' && entry) return entry.taskId ? execute(s, { type: 'editTask', taskId: entry.taskId, expectedVersion: task!.version, title, start, end, scope: str('scope') === 'future' ? 'future' : 'one', allDay, instructionVersion: str('instructionVersion') ? Number(str('instructionVersion')) : undefined }) : execute(s, { type: 'editVisit', id: visit!.id, expectedVersion: visit!.version, rescheduleLinkedTasks: str('rescheduleCare') === 'on', input: { recipientId, title, start, end, timezone: zone, allDay, kind: type === 'visit' ? 'visit' : 'appointment', followUpOf: type === 'followup' ? str('followUpOf') : undefined, location: str('location'), provider: str('provider'), notes: str('notes') } });
+        if (type !== 'task') {
+          const result = execute(s, { type: 'createVisit', input: { recipientId, title, start, end, timezone: zone, allDay, kind: type === 'visit' ? 'visit' : 'appointment', followUpOf: type === 'followup' ? str('followUpOf') : undefined, location: str('location'), provider: str('provider'), notes: str('notes') } });
+          s = result.state; resultId = result.resultId;
+          const care = execute(s, { type: 'createTask', input: { recipientId, title: `Care for ${title}`, category: type === 'visit' ? 'daily_care' : 'transport', start, end, timezone: zone, allDay, visitId: resultId } });
+          s = care.state; taskIds = [care.resultId];
+        } else {
+          const before = new Set(s.tasks.map(t => t.id));
+          const result = execute(s, { type: 'createTask', input: { recipientId, title, category: str('category'), start, end, timezone: zone, allDay, visitId: str('visitId') || undefined, instructionId: str('instructionId') || undefined, recurrence: str('frequency') === 'none' ? undefined : { frequency: str('frequency') as 'daily' | 'weekly', count: Number(str('count')) } } });
+          s = result.state; resultId = str('visitId') || result.resultId; taskIds = s.tasks.filter(t => !before.has(t.id)).map(t => t.id);
+        }
+        for (const id of taskIds) for (const [priority, helperId] of [[0, primary], [1, secondary]] as const) if (helperId) s = execute(s, { type: 'requestAssignment', taskId: id, helperId, priority, expectedVersion: s.tasks.find(t => t.id === id)!.version }).state;
+        return { state: s, resultId };
+      }, id => setSelectedEntryId(id || null));
+    } catch (e) { setError(e instanceof Error ? e.message : 'Please check the dates and times.'); }
   }
-  const days = Array.from({ length: mode === 'week' ? 7 : 1 }, (_, i) => shiftDay(day, i));
-  const matchesTask = (t: Task) => (recipient === 'all' || t.recipientId === recipient) && (helper === 'all' || view.assignments.some(a => a.taskId === t.id && a.helperId === helper && ['accepted', 'requested'].includes(a.status))) && (status === 'all' || (status === 'overdue' ? overdue(t) : coverage(state, t) === status));
-  const tasks = view.tasks.filter(matchesTask);
-  const visits = view.visits.filter(v => (recipient === 'all' || v.recipientId === recipient) && (helper === 'all' || tasks.some(t => t.visitId === v.id)) && (status === 'all' || tasks.some(t => t.visitId === v.id)));
-  const inDay = (item: Task | Visit, date: string) => parts(item.start, item.timezone).slice(0, 10) <= date && parts(new Date(Date.parse(item.end) - 1).toISOString(), item.timezone).slice(0, 10) >= date;
-  const timeLabel = (item: Task | Visit) => {
-    const start = parts(item.start, item.timezone), end = parts(item.end, item.timezone);
-    return start.slice(0, 10) === end.slice(0, 10) ? `${start.slice(11)}–${end.slice(11)}` : `${start.replace('T', ' ')} → ${end.replace('T', ' ')}`;
-  };
-  function taskCard(t: Task) {
-    const pending = view.assignments.find(a => a.taskId === t.id && a.status === 'requested');
-    const accepted = view.assignments.find(a => a.taskId === t.id && a.status === 'accepted');
-    const instruction = view.instructions.find(i => i.id === t.instructionId && i.current);
-    return <article className={styles.card} key={t.id}>
-      <div className={styles.meta}>{name(t.recipientId)} · {labels[t.category] || t.category}</div>
-      <h3>{t.title}</h3><p className={styles.meta}>{timeLabel(t)} · {t.timezone}</p>
-      <div className={styles.badges}><span className={`${styles.badge} ${coverage(state, t) === 'accepted' ? '' : styles.warning}`}>{labels[coverage(state, t)]}</span><span className={`${styles.badge} ${styles.neutral}`}>{labels[t.status]}</span>{overdue(t) && <span className={`${styles.badge} ${styles.warning}`}>Overdue · unresolved</span>}</div>
-      {accepted && <p>Responsible: <strong>{helperName(accepted.helperId)}</strong></p>}
-      {pending && <p>Requested: {helperName(pending.helperId)} · awaiting response{accepted ? '; current helper retains coverage.' : '.'}</p>}
-      {instruction && <p>Instructions v{instruction.version}: {instruction.text}</p>}
-      {t.visitId && <p className={styles.meta}>Linked to: {view.visits.find(v => v.id === t.visitId)?.title || 'Authorized visit'}</p>}
-      <div className={styles.actions}>
-        {pending?.helperId === actor && <><button className={styles.primary} onClick={() => run({ type: 'respondAssignment', id: pending.id, expectedVersion: pending.version, response: 'accepted' })}>Accept</button><button onClick={() => run({ type: 'respondAssignment', id: pending.id, expectedVersion: pending.version, response: 'declined' })}>Decline</button></>}
-        {canManage(t.recipientId, t.id) && active(t) && <><button onClick={() => open({ kind: 'assign', task: t })}>{accepted ? 'Request replacement' : 'Assign helper'}</button><button onClick={() => open({ kind: 'editTask', task: t })}>Edit task</button><button onClick={() => open({ kind: 'cancelTask', task: t })}>Cancel task</button>{pending && <button onClick={() => run({ type: 'cancelAssignment', id: pending.id, expectedVersion: pending.version })}>Withdraw request</button>}</>}
-        {accepted?.helperId === actor && active(t) && <><button className={styles.primary} onClick={() => open({ kind: 'outcome', task: t })} disabled={!!t.medicationOccurrenceId || t.category === 'medication'}>Record outcome</button><button onClick={() => setMessage('Temporary coverage is not connected yet. No guest access or replacement request has been created.')}>Request cover</button></>}
-      </div>
-      {state.audit.some(e => e.taskId === t.id) && <details className={styles.history}><summary>Task history</summary><ul>{view.audit.filter(e => e.taskId === t.id).map(e => <li key={e.id}>{parts(e.at, t.timezone)} · {helperName(e.actorId)} · {e.action}: {e.detail}</li>)}</ul></details>}
-    </article>;
-  }
-  function visitCard(v: Visit) {
-    const allLinked = view.tasks.filter(t => t.visitId === v.id);
-    const linked = allLinked.filter(active);
-    const covered = linked.length > 0 && linked.every(t => coverage(state, t) === 'accepted');
-    const resolved = allLinked.length > 0 && linked.length === 0;
-    return <article className={styles.card} key={v.id}><div className={styles.meta}>{name(v.recipientId)} · {v.kind === 'appointment' ? 'Appointment' : 'Care visit'}</div><h3>{v.title}</h3><p className={styles.meta}>{timeLabel(v)} · {v.timezone}</p><span className={`${styles.badge} ${covered || resolved ? '' : styles.warning}`}>{v.canceled ? 'Canceled' : resolved ? 'Linked tasks resolved' : covered ? 'Linked tasks covered' : 'Coverage needs review'}</span><p>{v.location}{v.provider && ` · ${v.provider}`}</p>{v.notes && <p>{v.notes}</p>}{canManage(v.recipientId) && !v.canceled && <div className={styles.actions}><button onClick={() => open({ kind: 'editVisit', visit: v })}>Edit visit</button><button onClick={() => open({ kind: 'cancelVisit', visit: v })}>Cancel visit</button></div>}</article>;
-  }
-  const existingTask = modal && 'task' in modal ? modal.task : undefined;
-  const existingVisit = modal && 'visit' in modal ? modal.visit : undefined;
+  function chooseRole(t: Task, priority: number) { clearMessages(); setTargetTaskId(t.id); setDraftPriority(priority); setDraftHelper(view.helpers.find(h => h.id === 'ben')?.id || view.helpers[0]?.id || ''); setAction('assign'); }
+  const showDialog = !!entry || action === 'create';
+  const title = action === 'create' ? 'Add an event' : action === 'edit' ? 'Edit event' : action === 'assign' ? roleLabel(draftPriority) : action === 'outcome' ? 'Record what happened' : action === 'cancel' ? 'Cancel this event?' : entry?.title || '';
+  const scheduleDays = listView && mode === 'week' ? weekDays(selected) : [selected];
   return <main className={styles.shell}>
-    <header className={styles.header}><Link href="/" className="wordmark">Hands<span>In</span></Link><Link href="/calendar">Calendar & delegation ↗</Link></header>
-    <div className={styles.notice}><strong>Fictional demo · not a connected care account</strong><p>Use fictional information only. Changes reset on reload and are not shared. Demo personas are not real sign-ins; no phone alerts or temporary access are created.</p></div>
-    <section className={styles.intro}><p className={styles.eyebrow}>A plan everyone can count on.</p><h1>Someone’s got today.</h1><p>See what’s coming up, who’s helping, and where a little backup is needed.</p></section>
-    <div className={styles.toolbar}><label className={styles.field}>Demo persona (not sign-in)<select value={actor} onChange={e => { setActor(e.target.value); setRecipient('all'); setHelper('all'); setModal(null); setError(''); setMessage(''); }}>{state.helpers.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></label><div className={styles.actions}><button onClick={() => open({ kind: 'visit' })} disabled={!managedRecipients.length}>+ Appointment / visit</button><button className={styles.primary} onClick={() => open({ kind: 'task' })} disabled={!managedRecipients.length}>+ Care task</button></div></div>
-    <div className={styles.stats}><div className={styles.stat}><strong>{view.tasks.filter(t => coverage(state, t) === 'accepted').length}</strong><span>Accepted tasks</span></div><div className={styles.stat}><strong>{view.tasks.filter(t => coverage(state, t) === 'pending').length}</strong><span>Awaiting acceptance</span></div><div className={styles.stat}><strong>{view.tasks.filter(t => coverage(state, t) === 'uncovered').length}</strong><span>Need a helper</span></div></div>
-    <div className={styles.filters}>
-      <label className={styles.field}>Loved one<select value={recipient} onChange={e => setRecipient(e.target.value)}><option value="all">All authorized recipients</option>{view.recipients.map(r => <option value={r.id} key={r.id}>{r.name}</option>)}</select></label>
-      <label className={styles.field}>Helper<select value={helper} onChange={e => setHelper(e.target.value)}><option value="all">All helpers</option>{view.helpers.map(h => <option value={h.id} key={h.id}>{h.name}</option>)}</select></label>
-      <label className={styles.field}>Item type<select value={kind} onChange={e => setKind(e.target.value)}><option value="all">All items</option><option value="tasks">Care tasks</option><option value="visits">Appointments & visits</option></select></label>
-      <label className={styles.field}>Coverage<select value={status} onChange={e => setStatus(e.target.value)}>{['all', 'accepted', 'pending', 'uncovered', 'overdue', 'closed'].map(s => <option key={s} value={s}>{labels[s] || (s === 'all' ? 'All statuses' : 'Overdue')}</option>)}</select></label>
+    <header className={styles.appHeader}><Link className={styles.wordmark} href="/">Hands<span>In</span><i aria-hidden="true">✳</i></Link><span className={styles.headerDivider} /><span className={styles.pageName}>Calendar</span><div className={styles.headerRight}><span className={styles.demoLabel}>Fictional demo · changes reset on reload</span><span className={styles.avatar} aria-label={`Viewing as ${helperName(actor)}`}>{helperName(actor).split(' ').map(w => w[0]).slice(0, 2).join('')}</span></div></header>
+    <div className={styles.workspace}>
+      <div className={styles.pageIntro}><div><p className={styles.eyebrow}>Care, together.</p><h1>Your family calendar</h1><p>Appointments, helping hands, and a little peace of mind.</p></div><button className={styles.primary} disabled={!canAdd} onClick={() => add()}>+ Add event</button></div>
+      <div className={styles.calendarToolbar}><div className={styles.dateNavigation}><button type="button" onClick={() => setSelected(today)}>Today</button><button type="button" aria-label={`Previous ${mode}`} onClick={() => setSelected(movePeriod(selected, mode, -1))}>‹</button><button type="button" aria-label={`Next ${mode}`} onClick={() => setSelected(movePeriod(selected, mode, 1))}>›</button><h2 aria-live="polite">{calendarTitle(selected, mode)}</h2></div><div className={styles.viewSwitcher} role="group" aria-label="Calendar view">{(['day', 'week', 'month', 'year'] as CalendarMode[]).map(m => <button key={m} type="button" aria-pressed={mode === m} onClick={() => { setMode(m); setListView(false); }}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div></div>
+      <div className={styles.contextBar}><label className={styles.recipientSelect}>For<select aria-label="Loved one" value={recipient} onChange={e => { setRecipient(e.target.value); setSelectedEntryId(null); setAction(null); }}><option value="all">Everyone in my care</option>{view.recipients.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label><span className={styles.timezone}>{displayZone.replaceAll('_', ' ')}</span><details className={styles.filterMenu}><summary>Filters</summary><div className={styles.filterFields}><label className={styles.field}>Event type<select value={filterKind} onChange={e => setFilterKind(e.target.value)}><option value="all">All types</option><option value="appointment">Appointments</option><option value="followup">Follow-ups</option><option value="visit">Care visits</option><option value="task">Care tasks</option></select></label><label className={styles.field}>Coverage<select value={filterCoverage} onChange={e => setFilterCoverage(e.target.value)}>{['all', 'Covered', 'Waiting for response', 'Needs a caregiver', 'Care resolved', 'Canceled'].map(s => <option key={s} value={s}>{s === 'all' ? 'All coverage' : s}</option>)}</select></label><button onClick={() => { setFilterKind('all'); setFilterCoverage('all'); }}>Clear filters</button></div></details>{(mode === 'day' || mode === 'week') && <button className={styles.textButton} aria-pressed={listView} onClick={() => setListView(!listView)}>{listView ? 'Show time grid' : 'Show simple list'}</button>}</div>
+      {message && !showDialog && <p role="status" className={styles.message}>{message}</p>}{error && !showDialog && <p role="alert" className={styles.error}>{error}</p>}
+      {!view.recipients.length ? <div className={styles.empty}>No recipient access for this demo persona.</div> : <>
+        {!listView && <CalendarViews mode={mode} selected={selected} today={today} timezone={displayZone} entries={entries} onDate={pickDate} onMonth={day => { setSelected(day); setMode('month'); setListView(false); }} onEvent={openEntry} onAdd={add} recipientName={name} coverageLabel={coverageLabel} canAdd={canAdd} />}
+        <section id="calendar-day-schedule" className={styles.daySchedule} aria-label="Selected day schedule">{scheduleDays.map(day => <div key={day}><div className={styles.scheduleHeading}><div><span className={styles.eyebrow}>{listView && mode === 'week' ? 'Week schedule' : 'Selected day'}</span><h2>{formatDay(day, { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button disabled={!canAdd} onClick={() => add(day)}>+ Add to this day</button></div>{entriesOnDay(entries, day, displayZone).length ? entriesOnDay(entries, day, displayZone).map(item => <button key={item.id} className={`${styles.scheduleItem} ${item.canceled ? styles.canceledEvent : ''}`} onClick={() => openEntry(item)}><span className={`${styles.eventMarker} ${styles[item.kind]}`} aria-hidden="true" /><span className={styles.scheduleTime}>{timeRange(item, displayZone)}</span><span className={styles.scheduleName}><strong>{item.title}</strong><small>{name(item.recipientId)} · {kindLabel(item)}</small></span><span className={`${styles.coverageBadge} ${coverageLabel(item) === 'Covered' ? styles.covered : ''}`}>{coverageLabel(item)}</span><span aria-hidden="true">›</span></button>) : <div className={styles.empty}>Nothing scheduled for this day.{canAdd && ' Select “Add to this day” to make a plan.'}</div>}</div>)}</section>
+      </>}
+      <footer className={styles.calendarFooter}><div className={styles.legend}>{(['appointment', 'followup', 'visit', 'task'] as const).map(kind => <span key={kind}><i className={`${styles.legendDot} ${styles[kind]}`} />{{ appointment: 'Appointment', followup: 'Follow-up', visit: 'Care visit', task: 'Care task' }[kind]}</span>)}</div><details className={styles.demoTools}><summary>Demo tools</summary><label className={styles.field}>Demo persona (not sign-in)<select value={actor} onChange={e => { setActor(e.target.value); setRecipient('all'); setSelectedEntryId(null); setAction(null); clearMessages(); }}>{state.helpers.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></label><p>Fictional information only. No shared saving, phone alerts, or real access grants. Reload to reset.</p></details></footer>
     </div>
-    <div className={styles.toolbar}><div className={styles.row}><button aria-label="Previous period" onClick={() => setDay(shiftDay(day, mode === 'week' ? -7 : -1))}>←</button><button onClick={() => setDay(parts(now, 'America/Los_Angeles').slice(0, 10))}>Today</button><button aria-label="Next period" onClick={() => setDay(shiftDay(day, mode === 'week' ? 7 : 1))}>→</button><label className={styles.field}>Starting date<input type="date" value={day} required onChange={e => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setDay(e.target.value); }} /></label></div><div className={styles.row}><button aria-pressed={mode === 'day'} onClick={() => setMode('day')}>Day agenda</button><button aria-pressed={mode === 'week'} onClick={() => setMode('week')}>7-day view</button></div></div>
-    {message && <p role="status" className={styles.message}>{message}</p>}{error && !modal && <p role="alert" className={`${styles.message} ${styles.error}`}>{error}</p>}
-    <div className={mode === 'day' ? styles.grid : undefined}><section aria-label="Calendar items" className={mode === 'week' ? styles.week : styles.agenda}>{days.map(date => {
-      const items: (Task | Visit)[] = [...(kind === 'visits' ? [] : tasks.filter(t => inDay(t, date))), ...(kind === 'tasks' ? [] : visits.filter(v => inDay(v, date)))].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
-      return <div key={date} className={styles.weekColumn}><h2 className={styles.dayTitle}>{dateLabel(date)}</h2>{items.length ? items.map(item => 'category' in item ? taskCard(item) : visitCard(item)) : <div className={styles.empty}>{view.recipients.length ? 'No items match this day and your filters.' : 'No recipient access for this demo persona.'}</div>}</div>;
-    })}</section>{mode === 'day' && <aside className={styles.panel}><h2>Share the load.</h2><p>A request is a conversation. Coverage is confirmed when the helper accepts.</p><ol><li>Create a task as Sarah.</li><li>Request Ben’s help.</li><li>Switch to Ben and accept.</li><li>Record an outcome, then check history.</li></ol><details><summary>What’s connected?</summary><p>This demo exercises the domain rules with synthetic data in memory. Production login, database persistence, temporary coverage, medication outcomes, and SMS are unavailable. The calendar cannot send notifications or grant access.</p></details></aside>}</div>
-    {modal && <Dialog title={({ task: 'Create a care task', visit: 'Add appointment or visit', editTask: 'Edit care task', editVisit: 'Edit appointment or visit', assign: 'Request a helper', outcome: 'Record what happened', cancelTask: 'Cancel care task', cancelVisit: 'Cancel appointment or visit' })[modal.kind]} close={() => { setModal(null); setError(''); }}>
-      <p>{existingTask ? `${name(existingTask.recipientId)} · ${existingTask.title}` : existingVisit ? `${name(existingVisit.recipientId)} · ${existingVisit.title}` : 'Fictional demo data only.'}</p>
-      {error && <p role="alert" className={`${styles.message} ${styles.error}`}>{error}</p>}
-      <form className={styles.form} onSubmit={e => { e.preventDefault(); submit(e.currentTarget); }}>
-        {['task', 'visit', 'editVisit'].includes(modal.kind) && <label className={`${styles.field} ${styles.full}`}>Loved one<select value={draftRecipient} disabled={modal.kind === 'editVisit'} onChange={e => setDraftRecipient(e.target.value)}>{managedRecipients.map(r => <option value={r.id} key={r.id}>{r.name}</option>)}</select></label>}
-        {['task', 'visit', 'editTask', 'editVisit'].includes(modal.kind) && <>
-          <label className={`${styles.field} ${styles.full}`}>Title<input name="title" maxLength={160} required defaultValue={existingTask?.title || existingVisit?.title || ''} /></label>
-          <p className={`${styles.full} ${styles.meta}`}>Times are in {existingTask?.timezone || zone}. Repeated or nonexistent daylight-saving times require another time.</p>
-          <label className={styles.field}>Start<input key={`start-${draftRecipient}`} name="start" type="datetime-local" required defaultValue={existingTask ? parts(existingTask.start, existingTask.timezone) : existingVisit ? parts(existingVisit.start, zone) : `${day}T09:00`} /></label>
-          <label className={styles.field}>End / due by<input key={`end-${draftRecipient}`} name="end" type="datetime-local" required defaultValue={existingTask ? parts(existingTask.end, existingTask.timezone) : existingVisit ? parts(existingVisit.end, zone) : `${day}T10:00`} /></label>
-        </>}
-        {modal.kind === 'task' && <>
-          <label className={styles.field}>Category<select name="category">{['daily_care', 'transport', 'companionship'].map(k => <option value={k} key={k}>{labels[k]}</option>)}</select></label>
-          <label className={styles.field}>Repeat<select name="frequency"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
-          <label className={styles.field}>Occurrences (if repeating)<input name="count" type="number" min={1} max={30} defaultValue={7} /></label>
-          <label className={styles.field}>Linked visit<select name="visitId" key={`visit-${draftRecipient}`}><option value="">None</option>{view.visits.filter(v => v.recipientId === draftRecipient && !v.canceled).map(v => <option value={v.id} key={v.id}>{v.title}</option>)}</select></label>
-          <label className={`${styles.field} ${styles.full}`}>Approved instructions<select name="instructionId" key={`instructions-${draftRecipient}`}><option value="">No linked instruction</option>{view.instructions.filter(i => i.recipientId === draftRecipient && i.current).map(i => <option value={i.id} key={i.id}>{i.text}</option>)}</select></label>
-        </>}
-        {(modal.kind === 'visit' || modal.kind === 'editVisit') && <>
-          <label className={styles.field}>Type<select name="kind" defaultValue={existingVisit?.kind || 'appointment'}><option value="appointment">Appointment</option><option value="visit">Care visit / shift</option></select></label>
-          <label className={styles.field}>Location<input name="location" maxLength={2000} defaultValue={existingVisit?.location || ''} /></label>
-          <label className={`${styles.field} ${styles.full}`}>Provider / contact<input name="provider" maxLength={2000} defaultValue={existingVisit?.provider || ''} /></label>
-          <label className={`${styles.field} ${styles.full}`}>Notes / transport instructions<textarea name="notes" maxLength={2000} defaultValue={existingVisit?.notes || ''} /></label>
-          <p className={styles.full}>Create and link a transport or care task to request a helper. Saving this entry alone does not confirm coverage.</p>
-        </>}
-        {modal.kind === 'assign' && <>
-          <label className={`${styles.field} ${styles.full}`}>Proposed helper<select value={draftHelper} onChange={e => setDraftHelper(e.target.value)}>{view.helpers.filter(h => ['sarah', 'ben'].includes(h.id)).map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></label>
-          <div className={styles.full}>{assignmentConflicts(state, actor, modal.task, draftHelper, now).map((c, i) => <p className={styles.notice} key={i}>{c.message}</p>)}<p>The helper must accept. Current accepted coverage stays in place until a replacement accepts.</p></div>
-        </>}
-        {modal.kind === 'outcome' && <>
-          <label className={`${styles.field} ${styles.full}`}>Outcome<select name="outcome"><option value="completed">Completed</option><option value="in_progress">In progress</option><option value="unable_to_complete">Unable to complete — needs help</option><option value="declined_by_recipient">Recipient declined</option></select></label>
-          <label className={`${styles.field} ${styles.full}`}>What happened?<textarea name="detail" required maxLength={1000} /></label>
-        </>}
-        {(modal.kind === 'editTask' || modal.kind === 'cancelTask') && <><label className={`${styles.field} ${styles.full}`}>Apply to<select name="scope"><option value="one">This occurrence</option>{existingTask?.seriesId && <option value="future">This and future unresolved occurrences</option>}</select></label><p className={styles.full}>Completed history is preserved. Editing cancels affected assignments so helpers can review a new request. Future occurrences keep their relative calendar spacing and use the new local start/end times.</p></>}
-        {modal.kind === 'editTask' && modal.task.instructionId && <div className={styles.full}>{view.instructions.filter(i => i.id === modal.task.instructionId && i.current).map(i => <label key={i.id}><p>Current instructions v{i.version}: {i.text}</p><input type="checkbox" name="instructionVersion" value={i.version} required /> I reviewed these current instructions.</label>)}</div>}
-        {modal.kind === 'cancelVisit' && <p className={styles.full}>This cancels the visit and its unresolved linked tasks, withdraws their assignments, and invalidates their queued reminders. Completed history is preserved.</p>}
-        <div className={`${styles.actions} ${styles.full}`}><button type="button" onClick={() => setModal(null)}>Back</button><button className={styles.primary} type="submit">{modal.kind === 'assign' ? 'Send demo request' : modal.kind.startsWith('cancel') ? 'Confirm cancellation' : 'Save demo change'}</button></div>
-      </form>
-    </Dialog>}
+    {showDialog && <CalendarDialog title={title} close={closeDialog}>
+      {message && <p role="status" className={styles.message}>{message}</p>}{error && <p role="alert" className={styles.error}>{error}</p>}
+      {action === 'create' || action === 'edit' ? <EventEditor key={`${action}-${selectedEntryId || selected}-${followUp || ''}`} entry={action === 'edit' ? entry : undefined} task={task} visit={action === 'edit' ? visit : undefined} hasLinkedCare={assignedTasks.some(active)} date={selected} hour={addHour} defaultFollowUp={followUp} recipients={editorRecipients} helpers={view.helpers} instructions={view.instructions} visits={view.visits} onSave={saveEditor} onBack={closeDialog} /> : action === 'assign' && task ? <form className={styles.form} onSubmit={e => { e.preventDefault(); run({ type: 'requestAssignment', taskId: task.id, helperId: draftHelper, priority: draftPriority, expectedVersion: task.version }); }}><p className={styles.full}>{name(task.recipientId)} · {task.title}</p><label className={`${styles.field} ${styles.full}`}>Choose caregiver<select value={draftHelper} onChange={e => setDraftHelper(e.target.value)}>{view.helpers.filter(h => h.id !== 'unrelated' && h.id !== 'guest').map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></label><div className={styles.full}>{assignmentConflicts(state, actor, task, draftHelper, now).map((c, i) => <p className={styles.message} key={i}>{c.message}</p>)}<p>{draftPriority === 0 ? 'Current accepted coverage remains until this caregiver accepts.' : 'This is a backup role. It does not count as primary coverage.'}</p></div><div className={`${styles.formActions} ${styles.full}`}><button type="button" onClick={closeDialog}>Back</button><button type="submit" className={styles.primary}>Send request</button></div></form> : action === 'outcome' && task ? <form className={styles.form} onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); run({ type: 'outcome', taskId: task.id, expectedVersion: task.version, status: String(data.get('outcome')) as 'completed', detail: String(data.get('detail') || '') }); }}><p className={styles.full}>{name(task.recipientId)} · {task.title}</p><label className={`${styles.field} ${styles.full}`}>What happened?<select name="outcome"><option value="completed">Completed</option><option value="in_progress">In progress</option><option value="unable_to_complete">Unable to complete — needs help</option><option value="declined_by_recipient">Loved one declined</option></select></label><label className={`${styles.field} ${styles.full}`}>Note<textarea name="detail" required maxLength={1000} /></label><div className={`${styles.formActions} ${styles.full}`}><button type="button" onClick={closeDialog}>Back</button><button className={styles.primary}>Save outcome</button></div></form> : action === 'cancel' && entry ? <form onSubmit={e => { e.preventDefault(); const scope = new FormData(e.currentTarget).get('scope'); run(entry.taskId ? { type: 'cancelTask', taskId: entry.taskId, expectedVersion: task!.version, scope: scope === 'future' ? 'future' : 'one' } : { type: 'cancelVisit', id: visit!.id, expectedVersion: visit!.version }); }}><p>{entry.title} · {name(entry.recipientId)}</p><p>Unresolved linked work and caregiver requests will be canceled. Completed history will be kept.</p>{task?.seriesId && <label className={styles.field}>Cancel<select name="scope"><option value="one">This occurrence</option><option value="future">This and future unresolved occurrences</option></select></label>}<div className={styles.formActions}><button type="button" onClick={closeDialog}>Keep event</button><button className={styles.danger} type="submit">Confirm cancellation</button></div></form> : entry && <>
+        <div className={styles.detailMeta}><span className={`${styles.kindPill} ${styles[entry.kind]}`}>{kindLabel(entry)}</span><span className={`${styles.coverageBadge} ${coverageLabel(entry) === 'Covered' ? styles.covered : ''}`}>{coverageLabel(entry)}</span></div>
+        <dl className={styles.eventFacts}><div><dt>Loved one</dt><dd>{name(entry.recipientId)}</dd></div><div><dt>When</dt><dd>{formatDay(parts(entry.start, entry.timezone).slice(0, 10))}<br />{timeRange(entry, entry.timezone)}<small>{entry.timezone.replaceAll('_', ' ')}</small></dd></div>{visit?.location && <div><dt>Where</dt><dd>{visit.location}</dd></div>}{visit?.provider && <div><dt>Contact</dt><dd>{visit.provider}</dd></div>}{visit?.notes && <div><dt>Notes</dt><dd>{visit.notes}</dd></div>}{visit?.followUpOf && <div><dt>Follow-up to</dt><dd>{view.visits.find(v => v.id === visit.followUpOf)?.title || 'Earlier appointment'}</dd></div>}</dl>
+        {assignedTasks.length ? <CaregiverPanel tasks={assignedTasks} view={view} actor={actor} canManage={t => canManage(t.recipientId, t.id)} onAssign={chooseRole} onOutcome={t => { setTargetTaskId(t.id); setAction('outcome'); }} onCoverage={() => setMessage('Temporary helper access is not connected. A coordinator can request a replacement from existing caregivers.')} run={run} /> : !entry.canceled && canManage(entry.recipientId) && <button className={styles.primary} onClick={() => transact((s, execute) => execute(s, { type: 'createTask', input: { recipientId: entry.recipientId, title: `Care for ${entry.title}`, category: 'transport', start: entry.start, end: entry.end, timezone: entry.timezone, visitId: entry.visitId, allDay: entry.allDay } }))}>Add caregiver responsibilities</button>}
+        {canManage(entry.recipientId, entry.taskId) && !entry.canceled && <div className={styles.formActions}><button onClick={() => { setError(''); setAction('edit'); }}>Edit event</button>{visit && <button onClick={() => { clearMessages(); setFollowUp(visit.id); setSelected(shiftDay(parts(visit.start, visit.timezone).slice(0, 10), 7)); setSelectedEntryId(null); setAction('create'); }}>+ Follow-up</button>}<button className={styles.textDanger} onClick={() => { setError(''); setAction('cancel'); }}>Cancel event</button></div>}
+      </>}
+    </CalendarDialog>}
   </main>;
 }
