@@ -7,6 +7,9 @@ const framesDir = path.resolve(process.argv[2]);
 const outputDir = path.resolve(process.argv[3] || "../outputs/handsin-active-demo");
 const sourceDuration = Number(process.env.SOURCE_DURATION);
 if (!sourceDuration || sourceDuration <= 0) throw new Error("Set SOURCE_DURATION to the recorded WebM duration.");
+const slowStart = Number(process.env.SLOW_START || 20);
+const slowFactor = Number(process.env.SLOW_FACTOR || 1.75);
+if (slowStart <= 0 || slowStart >= sourceDuration || slowFactor < 1) throw new Error("Invalid slow-section settings.");
 await mkdir(outputDir, { recursive: true });
 
 function run(args) {
@@ -15,18 +18,19 @@ function run(args) {
 }
 
 const master = path.join(outputDir, "handsin-active-user-demo-1080p.mp4");
-const speed = (30 / sourceDuration).toFixed(8);
+const expectedDuration = slowStart + (sourceDuration - slowStart) * slowFactor;
+const finish = [
+  "scale=1920:968:force_original_aspect_ratio=decrease",
+  "pad=1920:1080:0:0:color=0x102e2a",
+  "drawbox=x=0:y=968:w=1920:h=112:color=0x102e2a:t=fill",
+  "drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='Live demo. Clicking, typing, scrolling, and filtering fictional data.':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=1004",
+].join(",");
 run([
   "-y", "-framerate", "10", "-i", path.join(framesDir, "%06d.jpg"),
-  "-vf", [
-    `setpts=${speed}*PTS`,
-    "scale=1920:968:force_original_aspect_ratio=decrease",
-    "pad=1920:1080:0:0:color=0x102e2a",
-    "drawbox=x=0:y=968:w=1920:h=112:color=0x102e2a:t=fill",
-    "drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='Live demo. Clicking, typing, scrolling, and filtering fictional data.':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=1004",
-  ].join(","),
-  "-t", "30", "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30", "-movflags", "+faststart", master,
+  "-filter_complex", `[0:v]split=2[first][second];[first]trim=start=0:end=${slowStart},setpts=PTS-STARTPTS[firstOut];[second]trim=start=${slowStart}:end=${sourceDuration},setpts=${slowFactor}*(PTS-STARTPTS)[secondOut];[firstOut][secondOut]concat=n=2:v=1:a=0,${finish}[out]`,
+  "-map", "[out]", "-t", expectedDuration.toFixed(3), "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30", "-movflags", "+faststart", master,
 ]);
 run(["-y", "-i", master, "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "28", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path.join(outputDir, "handsin-active-user-demo-compressed.mp4")]);
 await copyFile(master, path.join(outputDir, "handsin-active-user-demo-silent-captioned.mp4"));
 run(["-y", "-ss", "00:00:04", "-i", master, "-frames:v", "1", "-update", "1", path.join(outputDir, "handsin-active-user-demo-thumbnail.png")]);
+console.log(`Rendered ${expectedDuration.toFixed(3)} seconds. The section after ${slowStart}s is slowed to ${slowFactor}x duration.`);
