@@ -1,7 +1,7 @@
 // File contents stay in this browser. OCR engine assets may be downloaded on first use.
 async function imageText(file:Blob|HTMLCanvasElement,progress:(n:number)=>void){
  const {createWorker}=await import('tesseract.js');
- const worker=await createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')progress(Math.round((m.progress||0)*100));}});
+ const worker=await createWorker('eng',1,{workerPath:new URL('/scanner-assets/ocr-worker.min.js',location.origin).href,corePath:new URL('/scanner-assets/core',location.origin).href,logger:m=>{if(m.status==='recognizing text')progress(Math.round((m.progress||0)*100));}});
  try{return (await worker.recognize(file)).data.text;}finally{await worker.terminate();}
 }
 export async function extractSource(file:File,progress:(n:number)=>void):Promise<{text:string;pages:number}>{
@@ -10,10 +10,10 @@ export async function extractSource(file:File,progress:(n:number)=>void):Promise
  if(file.type==='text/plain')return {text:await file.text(),pages:1};
  if(file.type!=='application/pdf')throw Error('Choose an image, PDF or text file.');
  const pdfjs=await import('pdfjs-dist');
- pdfjs.GlobalWorkerOptions.workerSrc=new URL('pdfjs-dist/build/pdf.worker.min.mjs',import.meta.url).toString();
- const task=pdfjs.getDocument({data:await file.arrayBuffer()});
- const pdf=await task.promise;
+ pdfjs.GlobalWorkerOptions.workerSrc='/scanner-assets/pdf.worker.min.mjs';
+ const task=pdfjs.getDocument({data:await file.arrayBuffer(),cMapUrl:'/scanner-assets/pdf/cmaps/',cMapPacked:true,standardFontDataUrl:'/scanner-assets/pdf/standard_fonts/',wasmUrl:'/scanner-assets/pdf/wasm/'});
  try{
+  const pdf=await task.promise;
   if(pdf.numPages>6)throw Error('Choose a report of six pages or fewer, or enter the reviewed results manually.');
   const pages:string[]=[];
   for(let i=1;i<=pdf.numPages;i++){

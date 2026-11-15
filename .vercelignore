@@ -1,0 +1,8 @@
+.env*
+.local-tools/
+.local-services/
+.coverage-test-output/
+.people-test-output/
+.calendar-test-build/
+.integration-test-build/
+public/scanner-assets/
