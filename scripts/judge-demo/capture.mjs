@@ -35,12 +35,13 @@ await shot("02-profiles-june");
 
 // June's deliberately distinct care routine.
 await open("/care/demo");
+await shot("03-care-alex");
 const careRecipient = page.getByLabel("Care for");
 if (await careRecipient.count()) {
   await careRecipient.selectOption({ label: "June Morgan" });
   await page.waitForTimeout(350);
 }
-await shot("03-june-care");
+await shot("03-care-june");
 
 // Medication label flow: recipient -> capture -> review.
 await open("/demo/medications/new/recipient");
@@ -56,8 +57,8 @@ await shot("05-medication-review");
 await open("/demo/health/new/recipient");
 await clickButton(/June Morgan/);
 await clickButton("Continue");
-await clickButton("Explore with a synthetic sample report");
 await shot("06-health-upload");
+await clickButton("Explore with a synthetic sample report");
 if (!page.url().endsWith("/review") && await page.getByRole("button", { name: "Review extracted results" }).count()) {
   await page.getByRole("button", { name: "Review extracted results" }).click();
   await page.waitForTimeout(350);

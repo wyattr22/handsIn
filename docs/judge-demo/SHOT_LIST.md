@@ -5,11 +5,11 @@ All names and records shown are fictional demo data. The cut is silent with burn
 | Time | Screen | Judge takeaway |
 | --- | --- | --- |
 | 0:00–0:03 | Branded home dashboard | One calm starting point for family care. |
-| 0:03–0:07 | June selected, with her photo and color | Each person has a recognizable, personalized care context. |
-| 0:07–0:12 | June's daily-care plan | Routines, meals, and reminders can differ by person. |
-| 0:12–0:17 | Medication review | A label becomes a reviewable draft; the user remains responsible for verification. |
-| 0:17–0:21 | Synthetic health-report review | Extracted fields stay tied to a source and require review. |
-| 0:21–0:26 | June-filtered family calendar | Families can switch between one person and the combined schedule. |
+| 0:03–0:07 | Alex → June profile switch | The selected profile changes visibly. |
+| 0:07–0:12 | Alex → June daily-care plan | Routines, meals, times, and theme change by person. |
+| 0:12–0:17 | Medication capture → review | A label becomes an editable review draft. |
+| 0:17–0:21 | Synthetic report upload → review | Extracted fields remain tied to the source for verification. |
+| 0:21–0:26 | Everyone → June calendar filter | Families can narrow the combined schedule to one person. |
 | 0:26–0:30 | Branded closing frame | “HandsIn — care is a team effort.” |
 
 ## Accuracy notes

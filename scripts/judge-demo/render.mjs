@@ -9,13 +9,13 @@ const temp = path.join(out, ".segments");
 await mkdir(temp, { recursive: true });
 
 const scenes = [
-  ["01-home.png", 3, "One place for the whole family's care."],
-  ["02-profiles-june.png", 4, "Personalized profiles make every care plan unmistakable."],
-  ["03-june-care.png", 5, "Meals, routines, and reminders adapt to each person."],
-  ["05-medication-review.png", 5, "Review medication labels and schedules before saving."],
-  ["07-health-review.png", 4, "Verify every extracted health result against its source."],
-  ["09-calendar-june.png", 5, "See one person or the whole family in a shared calendar."],
-  ["10-closing.png", 4, "HandsIn — care is a team effort."],
+  ["01-home.png", "01-home.png", 3, "One place for the whole family's care."],
+  ["01-home.png", "02-profiles-june.png", 4, "Switch profiles — the page changes with the person."],
+  ["03-care-alex.png", "03-care-june.png", 5, "Choose June — her meals, times, and theme appear."],
+  ["04-medication-capture.png", "05-medication-review.png", 5, "Open medication review — every field stays editable."],
+  ["06-health-upload.png", "07-health-review.png", 4, "Load a synthetic report — then verify every result."],
+  ["08-calendar-everyone.png", "09-calendar-june.png", 5, "Filter the family calendar from everyone to June."],
+  ["10-closing.png", "10-closing.png", 4, "HandsIn — care is a team effort."],
 ];
 
 function run(args) {
@@ -24,23 +24,30 @@ function run(args) {
 }
 
 for (let index = 0; index < scenes.length; index += 1) {
-  const [file, duration, caption] = scenes[index];
+  const [fromFile, toFile, duration, caption] = scenes[index];
   const segment = path.join(temp, `${String(index + 1).padStart(2, "0")}.mp4`);
   const safeCaption = caption.replaceAll("'", "’").replaceAll(":", "\\:");
   const fadeOut = Math.max(0, duration - 0.28).toFixed(2);
-  run([
-    "-y", "-loop", "1", "-i", path.join(frames, file), "-t", String(duration),
-    "-vf", [
-      "scale=1920:1080:force_original_aspect_ratio=decrease",
-      "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=white",
-      "zoompan=z='min(zoom+0.00025,1.018)':d=1:s=1920x1080:fps=30",
-      "drawbox=x=70:y=890:w=1780:h=120:color=0x102e2a@0.90:t=fill",
-      `drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='${safeCaption}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=930`,
-      "fade=t=in:st=0:d=0.22",
-      `fade=t=out:st=${fadeOut}:d=0.28`,
-    ].join(","),
-    "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-r", "30", segment,
-  ]);
+  const shared = "scale=1720:968:force_original_aspect_ratio=decrease,pad=1920:968:(ow-iw)/2:(oh-ih)/2:color=0xf4f1ed";
+  const finish = [
+    "pad=1920:1080:0:0:color=0x102e2a",
+    "drawbox=x=0:y=968:w=1920:h=112:color=0x102e2a:t=fill",
+    `drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='${safeCaption}':fontcolor=white:fontsize=34:x=(w-text_w)/2:y=1003`,
+    "fade=t=in:st=0:d=0.18",
+    `fade=t=out:st=${fadeOut}:d=0.28`,
+  ].join(",");
+  if (fromFile === toFile) {
+    run(["-y", "-loop", "1", "-i", path.join(frames, fromFile), "-t", String(duration), "-vf", `${shared},${finish}`, "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-r", "30", segment]);
+  } else {
+    const transitionDuration = 0.35;
+    const transitionAt = (duration / 2 - transitionDuration / 2).toFixed(2);
+    run([
+      "-y", "-loop", "1", "-t", String(duration), "-i", path.join(frames, fromFile),
+      "-loop", "1", "-t", String(duration), "-i", path.join(frames, toFile),
+      "-filter_complex", `[0:v]${shared}[a];[1:v]${shared}[b];[a][b]xfade=transition=fade:duration=${transitionDuration}:offset=${transitionAt},${finish}[out]`,
+      "-map", "[out]", "-t", String(duration), "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-r", "30", segment,
+    ]);
+  }
 }
 
 const concatFile = path.join(temp, "concat.txt");
