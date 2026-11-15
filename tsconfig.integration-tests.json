@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": false,
+    "incremental": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": ".integration-test-build",
+    "rootDir": ".",
+    "target": "ES2022"
+  },
+  "include": [
+    "src/features/workspace/medication-adapter.ts",
+    "src/features/care/demo.ts",
+    "src/features/workspace/records.ts",
+    "lib/medications/parse-label.ts",
+    "lib/health/parse-report.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

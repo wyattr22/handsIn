@@ -1,3 +1,4 @@
+import { DEMO_RECIPIENTS, DEMO_HELPERS } from '../coordination/demo/people';
 /** Fictional preview model. Not an authentication, grant or persistence implementation.
  * A production host must replace this adapter with authorized shared task/care services. */
 export type Outcome = 'completed' | 'declined_by_recipient' | 'unable_to_complete' | 'uncertain';
@@ -153,15 +154,15 @@ export function applyCoverage(previous: DemoStore, input: Envelope, actor: strin
 
 export function createDemoStore(): DemoStore {
   const make = (id: string, name: string, timezone: string, start: string, end: string): Coverage => ({
-    id, recipientId: `demo-${id}`, name, timezone, area: 'Fictional neighborhood', address: `Demo home ${name === 'Nora' ? 'A' : 'B'} · not a real address`,
+    id, recipientId: DEMO_RECIPIENTS.find(p => p.key === id)!.id, name, timezone, area: 'Fictional neighborhood', address: `Demo home ${name === 'Alex' ? 'A' : 'B'} · not a real address`,
     arrival: 'Use the front entrance and knock. Wait for an answer before entering.', preference: `Ask ${name} before putting things away. A visit can be declined.`,
-    coordinatorId: 'maya', coordinatorName: 'Maya', helperId: 'casey', helperName: 'Casey', contact: 'Maya is the demo contact; Jordan is the backup. No real contact is connected.',
+    coordinatorId: DEMO_HELPERS[0].id, coordinatorName: DEMO_HELPERS[0].name.split(' ')[0], helperId: DEMO_HELPERS[1].id, helperName: DEMO_HELPERS[1].name.split(' ')[0], contact: 'Sarah is the demo contact; Maya is the backup. No real contact is connected.',
     start, end, prepareFrom: '2026-11-14T22:00:00Z', respondBy: '2026-11-15T21:00:00Z',
     version: 1, state: 'draft', originalAvailable: false, invitation: 'none', taskIds: [`${id}-bag`, `${id}-visit`], reviewed: false, history: [],
     tasks: [
-      { id: `${id}-bag`, title: 'Bring the grocery bag inside', category: 'household', instruction: `The bag is on the front bench. Ask ${name} where it should go.`, source: 'Household note · reviewed by Maya, Nov 14', instructionVersion: 1, acknowledgedVersion: 0, version: 1 },
+      { id: `${id}-bag`, title: 'Bring the grocery bag inside', category: 'household', instruction: `The bag is on the front bench. Ask ${name} where it should go.`, source: 'Household note · reviewed by Sarah, Nov 14', instructionVersion: 1, acknowledgedVersion: 0, version: 1 },
       { id: `${id}-visit`, title: 'Spend some time together', category: 'companionship', instruction: `Ask ${name} if they would like company. Respect their choice if they decline.`, source: 'Recipient preference · reviewed Nov 14', instructionVersion: 1, acknowledgedVersion: 0, version: 1 }
     ]
   });
-  return { coverages: [make('nora', 'Nora', 'America/Los_Angeles', '2026-11-15T22:00:00Z', '2026-11-15T23:00:00Z'), make('eli', 'Eli', 'America/New_York', '2026-11-16T18:00:00Z', '2026-11-16T19:00:00Z')], receipts: [] };
+  return { coverages: DEMO_RECIPIENTS.map((p, i) => make(p.key, p.preferredName, p.timezone, i === 0 ? '2026-11-15T22:00:00Z' : '2026-11-16T18:00:00Z', i === 0 ? '2026-11-15T23:00:00Z' : '2026-11-16T19:00:00Z')), receipts: [] };
 }

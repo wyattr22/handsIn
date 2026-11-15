@@ -6,3 +6,9 @@ out/
 !.env.example
 *.tsbuildinfo
 .coverage-test-output/
+.calendar-test-build/
+.integration-test-build/
+
+.local-services/
+.local-tools/
+.people-test-output/

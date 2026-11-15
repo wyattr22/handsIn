@@ -1,2 +1,3 @@
 import CoverageDemo from '../../../src/features/coverage/CoverageDemo';
-export default function Page() { return <CoverageDemo />; }
+import DemoAppFrame from '../../../src/features/coverage/DemoAppFrame';
+export default function Page() { return <DemoAppFrame wide><CoverageDemo embedded /></DemoAppFrame>; }

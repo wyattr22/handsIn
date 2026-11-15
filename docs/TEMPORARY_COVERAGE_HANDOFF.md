@@ -1,5 +1,7 @@
 # Temporary coverage — first interactive slice
 
+**Current update:** Coverage now shares a demo session with the calendar and a Today screen, using the integration branch's Morgan-family identities and shell. See [calendar connection and integration alignment](COVERAGE_CALENDAR_CONNECTION.md) for current routes, walkthrough and verification. The original first-slice account below is historical; its Nora/Casey walkthrough is superseded by Alex/Ben.
+
 Built locally November 14, 2026 on `codex/temporary-coverage`, based on `8a454de`. The user authorized beginning the build after reviewing the preparation package. No other branch was merged. Main, deployment and database are unchanged.
 
 ## Open and run
