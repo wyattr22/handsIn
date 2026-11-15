@@ -1,0 +1,5 @@
+import Link from "next/link";
+
+export default function MedicationsPage() {
+  return <main className="app-shell"><header className="app-header"><Link className="flow-wordmark" href="/">Hands<span>In</span></Link><button aria-label="Open profile" className="profile-button">WR</button></header><section className="medications-home"><p className="home-date">Medication cabinet</p><h1>Everything they take,<br />in one careful place.</h1><div className="empty-medications"><div className="bottle-icon" aria-hidden="true"><i /><span>+</span></div><h2>No confirmed medications yet</h2><p>Photograph a prescription, over-the-counter product, or supplement. You will check every detail before it is saved.</p><Link href="/medications/new/recipient" className="primary-action">Scan a medication</Link></div></section><nav className="bottom-nav" aria-label="Primary"><Link href="/">Today</Link><Link className="active" href="/medications">Medications</Link><span>Calendar</span><span>Care</span><span>People</span></nav></main>;
+}
