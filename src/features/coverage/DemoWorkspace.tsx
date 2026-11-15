@@ -24,6 +24,7 @@ type Workspace = {
   actor: string; setActor: Dispatch<SetStateAction<string>>;
   now: string; setNow: Dispatch<SetStateAction<string>>;
   selected: string; setSelected: Dispatch<SetStateAction<string>>;
+  calendarRecipient: string; setCalendarRecipient: Dispatch<SetStateAction<string>>;
   recipients: DemoRecipient[]; addRecipient: (recipient: DemoRecipient) => void;
 };
 const Context = createContext<Workspace | null>(null);
@@ -37,11 +38,12 @@ export function CoverageWorkspaceProvider({ children }: { children: ReactNode })
   const [actor, setActor] = useState('sarah');
   const [now, setNow] = useState(DEMO_NOW);
   const [selected, setSelected] = useState('alex');
+  const [calendarRecipient, setCalendarRecipient] = useState('all');
   const [recipients, setRecipients] = useState<DemoRecipient[]>(DEMO_RECIPIENTS);
   const addRecipient = (recipient: DemoRecipient) => { setRecipients(current => [...current, recipient]); setSelected(recipient.key); };
   const calendar = care.coordination;
   const setCalendar: Dispatch<SetStateAction<CoordinationState>> = update => setCare(previous => ({...previous, coordination: typeof update === 'function' ? update(previous.coordination) : update}));
-  return <Context.Provider value={{ store, setStore, care, setCare, calendar, setCalendar, medications,setMedications,reports,setReports,medicationDrafts,setMedicationDrafts,healthDrafts,setHealthDrafts,actor, setActor, now, setNow, selected, setSelected, recipients, addRecipient }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ store, setStore, care, setCare, calendar, setCalendar, medications,setMedications,reports,setReports,medicationDrafts,setMedicationDrafts,healthDrafts,setHealthDrafts,actor, setActor, now, setNow, selected, setSelected, calendarRecipient, setCalendarRecipient, recipients, addRecipient }}>{children}</Context.Provider>;
 }
 export function useCoverageWorkspace() {
   const context = useContext(Context);

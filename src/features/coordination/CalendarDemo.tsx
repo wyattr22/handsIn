@@ -22,9 +22,8 @@ import { medicationCalendarState } from '../../server/domain/care/calendarProjec
 
 const active = (task: Task) => !['completed', 'declined_by_recipient', 'skipped', 'canceled'].includes(task.status);
 export default function CalendarDemo({ embedded = false }: { embedded?: boolean }) {
-  const { care, calendar, setCalendar, store, setStore, actor, setActor, now, setNow, selected: selectedCoverage, setSelected: selectCoverage } = useCoverageWorkspace();
+  const { care, calendar, setCalendar, store, setStore, actor, setActor, now, setNow, selected: selectedCoverage, setSelected: selectCoverage, calendarRecipient: recipient, setCalendarRecipient } = useCoverageWorkspace();
   const state = projectCoverageCalendar(medicationCalendarState(care), store, actor, now);
-  const [recipient, setCalendarRecipient] = useState('all');
   const setRecipient = (id: string) => { setCalendarRecipient(id); const person = DEMO_RECIPIENTS.find(p => p.id === id); if (person) selectCoverage(person.key); };
   const [filterKind, setFilterKind] = useState('all'), [filterCoverage, setFilterCoverage] = useState('all');
   const [mode, setMode] = useState<CalendarMode>('month'), [listView, setListView] = useState(false);
@@ -152,6 +151,5 @@ export default function CalendarDemo({ embedded = false }: { embedded?: boolean 
     </CalendarDialog>}
   </main>;
 }
-
 
 
