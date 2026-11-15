@@ -1,4 +1,4 @@
-# HandsIn judge demo — 30-second shot list
+# HandsIn judge demo: 30-second shot list
 
 All names and records shown are fictional demo data. The cut is silent with burned-in captions, so it remains understandable in a noisy judging room.
 
@@ -10,7 +10,7 @@ All names and records shown are fictional demo data. The cut is silent with burn
 | 0:12–0:17 | Medication capture → review | A label becomes an editable review draft. |
 | 0:17–0:21 | Synthetic report upload → review | Extracted fields remain tied to the source for verification. |
 | 0:21–0:26 | Everyone → June calendar filter | Families can narrow the combined schedule to one person. |
-| 0:26–0:30 | Branded closing frame | “HandsIn — care is a team effort.” |
+| 0:26–0:30 | Branded closing frame | “HandsIn: care is a team effort.” |
 
 ## Accuracy notes
 

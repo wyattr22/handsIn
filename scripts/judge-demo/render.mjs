@@ -10,12 +10,12 @@ await mkdir(temp, { recursive: true });
 
 const scenes = [
   ["01-home.png", "01-home.png", 3, "One place for the whole family's care."],
-  ["01-home.png", "02-profiles-june.png", 4, "Switch profiles — the page changes with the person."],
-  ["03-care-alex.png", "03-care-june.png", 5, "Choose June — her meals, times, and theme appear."],
-  ["04-medication-capture.png", "05-medication-review.png", 5, "Open medication review — every field stays editable."],
-  ["06-health-upload.png", "07-health-review.png", 4, "Load a synthetic report — then verify every result."],
+  ["01-home.png", "02-profiles-june.png", 4, "Switch profiles. The page changes with the person."],
+  ["03-care-alex.png", "03-care-june.png", 5, "Choose June. Her meals, times, and theme appear."],
+  ["04-medication-capture.png", "05-medication-review.png", 5, "Open medication review. Every field stays editable."],
+  ["06-health-upload.png", "07-health-review.png", 4, "Load a synthetic report, then verify every result."],
   ["08-calendar-everyone.png", "09-calendar-june.png", 5, "Filter the family calendar from everyone to June."],
-  ["10-closing.png", "10-closing.png", 4, "HandsIn — care is a team effort."],
+  ["10-closing.png", "10-closing.png", 4, "HandsIn: care is a team effort."],
 ];
 
 function run(args) {
