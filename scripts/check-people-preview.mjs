@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+const BASE=process.env.PEOPLE_BASE_URL||'http://127.0.0.1:3000';
 const output = process.env.PEOPLE_SCREENSHOT_DIR ? new URL('file:///' + process.env.PEOPLE_SCREENSHOT_DIR.replaceAll('\\', '/').replace(/\/$/, '') + '/') : new URL('../.people-test-output/', import.meta.url);
 await fs.mkdir(output, { recursive: true });
 const browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: 'chrome' }), headless: true });
@@ -9,7 +10,7 @@ page.setDefaultTimeout(12000);
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 try {
-  await page.goto('http://127.0.0.1:3000/people/preview');
+  await page.goto(BASE+'/people/preview');
   await page.getByRole('heading', { name: 'Good morning, Sarah.' }).waitFor();
   assert.equal(await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button').count(), 2, 'Only Home and People & roles belong in the workspace navigation');
   await page.getByRole('button', { name: 'People & roles' }).click();

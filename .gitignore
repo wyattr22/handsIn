@@ -8,3 +8,4 @@ out/
 .people-test-output/
 supabase/.temp/
 supabase/.branches/
+.local-services/
