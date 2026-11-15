@@ -7,7 +7,8 @@ const { applyCommand, shouldDispatch } = require('../.calendar-test-build/server
 const now = '2026-11-15T20:00:00Z', day = '2026-11-15';
 let n = 0;
 const ctx = (actorId = 'sarah', key = `care-test-${++n}`) => ({ actorId, now, idempotencyKey: key, newId: () => `test-${++n}` });
-const fixture = () => makeCareFixtures(now);
+const fixtureData = makeCareFixtures(now);
+const fixture = () => structuredClone(fixtureData);
 const first = w => w.coordination.tasks.find(t => t.category === 'meal' && t.recipientId === 'r-alex');
 const record = (w, actor = 'sarah', overrides = {}) => { const t = first(w); return applyCare(w, { type: 'record', taskId: t.id, expectedVersion: t.version, stage: 'consumed', amount: 'some', source: actor === 'patient-alex' ? 'self_reported' : 'observed', observedAt: now, note: 'A few bites of lentils actually eaten.', ...overrides }, ctx(actor)); };
 test('primary, secondary, ordinary caregiver and own patient can record without reassignment', () => {
@@ -99,6 +100,7 @@ test('meal reviews become stale after profile, medication and calendar-time chan
 });
 test('food separation uses only confirmed intervals, including adjacent dates', () => {
   const w = fixture(), m = w.meals[0], t = first(w), g = w.guidance[0];
+  w.medicationOccurrences = undefined; // Exercise the legacy wall-time adapter separately.
   g.rule = 'separate'; g.minutesBefore = 60; g.minutesAfter = 120; g.localTimes = ['00:00'];
   t.start = '2026-11-16T07:30:00Z'; t.end = '2026-11-16T08:00:00Z';
   assert.match(checkMeal(w, m).blocked.join(' '), /separation/);
@@ -169,4 +171,112 @@ test('care projection omits unrelated category tasks, instructions and appointme
   assert.equal(v.profiles.length, 2); assert.equal(v.coordination.visits.length, 0);
   assert.ok(v.coordination.tasks.every(t => ['meal', 'daily_care'].includes(t.category)));
   assert.ok(!v.coordination.instructions.some(i => i.id === 'i-walk'));
+});
+
+const { foodInstruction, macroInstruction, doseIssues, recipeNutrition, instructionConflicts } = require('../.calendar-test-build/server/domain/care/requirements.js');
+const { ingredients, recipes } = require('../.calendar-test-build/server/domain/care/catalog.js');
+test('ordinary with-food guidance never invents macronutrient amounts; an explicit fat requirement stays qualitative', () => {
+  const w = fixture();
+  assert.equal(macroInstruction(w.guidance[0]), 'No specific fat, carbohydrate, or protein amount is stated.');
+  const g = w.guidance.find(g => g.id === 'g-fat');
+  assert.match(foodInstruction(g), /food containing fat/); assert.match(macroInstruction(g), /No minimum amount is stated/);
+  assert.doesNotMatch(macroInstruction(g), /\d+ g/);
+});
+test('conditional OTC directions remain conditional and drink requirements are explicit', () => {
+  const w = fixture(); assert.match(foodInstruction(w.guidance.find(g => g.category === 'otc')), /if stomach upset/);
+  assert.match(foodInstruction(w.guidance.find(g => g.category === 'supplement')), /water and a meal/);
+  const m = w.meals[0]; m.drinks = [];
+  assert.match(checkMeal(w, m).review.join(' '), /planned drink has not been confirmed/);
+});
+test('exact product mismatch, conflicting patient instructions, unconfirmed and canceled doses never become suggestions', () => {
+  for (const mutate of [
+    (w, d) => { d.productIdentity.strength = 'Wrong strength'; },
+    (w, d) => { w.guidance.find(g => g.id === d.guidanceId).patientRule = 'empty_stomach'; },
+    (w, d) => { d.status = 'needs_review'; },
+    (w, d) => { d.status = 'canceled'; },
+  ]) {
+    const w = fixture(), d = w.medicationOccurrences[0]; mutate(w, d); assert.ok(doseIssues(w, d).length);
+  }
+  const w = fixture(), g = w.guidance[0]; g.patientRule = 'empty_stomach';
+  assert.ok(instructionConflicts(g).length); assert.equal(foodInstruction(g), 'Food instructions need confirmation.');
+});
+test('dose identity, time, version and cancellation changes make meal review stale', () => {
+  for (const mutate of [d => d.version++, d => { d.at = '2026-11-15T17:00:00Z'; }, d => { d.status = 'canceled'; }]) {
+    const w = fixture(), m = w.meals[0], old = mealFingerprint(w, m), d = w.medicationOccurrences.find(d => m.medicationOccurrenceIds.includes(d.id));
+    mutate(d); assert.notEqual(mealFingerprint(w, m), old); assert.ok(checkMeal(w, m).review.length);
+  }
+});
+test('known nutritional shortfalls block suggestions; missing or unit-mismatched data never claims a minimum is met', () => {
+  const w = fixture(), m = w.meals[0], g = w.guidance.find(g => g.id === w.medicationOccurrences.find(d => m.medicationOccurrenceIds.includes(d.id)).guidanceId);
+  g.requirements = [{ type: 'nutrient', nutrient: 'protein', minimum: 10, unit: 'g', text: 'Synthetic verified instruction: at least 10 g protein.' }];
+  assert.match(checkMeal(w, m).review.join(' '), /verified recipe nutrition/);
+  const backups = ingredients.map(i => i.nutrition);
+  try {
+    for (const item of ingredients) item.nutrition = { basisAmount: 1, basisUnit: item.id === 'carrot' ? 'whole' : item.id === 'oil' ? 'tbsp' : 'cups', fat: 0, carbohydrate: 0, protein: 0, energy: 0, sourceUrl: 'https://example.test/verified-test-data', version: 'test-1', verified: true };
+    assert.match(checkMeal(w, m).blocked.join(' '), /protein minimum/);
+    ingredients.find(i => i.id === 'lentil').nutrition.protein = 10;
+    assert.equal(checkMeal(w, m).blocked.length, 0); assert.match(checkMeal(w, m).notes.join(' '), /using sourced quantities/);
+    m.servings = 0.5; assert.match(checkMeal(w, m).blocked.join(' '), /protein minimum/);
+    ingredients.find(i => i.id === 'lentil').nutrition.basisUnit = 'g';
+    assert.equal(recipeNutrition(recipes.find(r => r.id === m.recipeId), 1, {}), undefined);
+  } finally { ingredients.forEach((i, n) => { i.nutrition = backups[n]; }); }
+});
+test('specific foods, planned drinks and substitutions are checked independently of actual consumption', () => {
+  const w = fixture(), m = w.meals[0], g = w.guidance.find(g => g.id === 'g-supp');
+  g.requirements = [{ type: 'food', ingredientIds: ['egg'], text: 'Synthetic instruction: take with egg.' }];
+  assert.match(checkMeal(w, m).review.join(' '), /planned food has not been confirmed/);
+  m.substitutions.lentil = 'egg'; assert.ok(!checkMeal(w, m).review.some(s => s.includes('planned food')));
+  w.profiles[0].allergies = ['egg']; assert.match(checkMeal(w, m).blocked.join(' '), /allergy/);
+  assert.equal(record(w).workspace.logs.length, 1);
+});
+test('new meal links reject stale dose versions, missing IDs, cross-recipient doses and duplicate dose planning', () => {
+  const w = fixture(), d = w.medicationOccurrences.find(d => d.recipientId === 'r-alex' && d.guidanceId === 'g-supp' && Date.parse(d.at) === Date.parse('2026-11-16T16:00:00Z'));
+  const c = { type: 'planMeal', recipientId: 'r-alex', start: d.at, end: new Date(Date.parse(d.at) + 1800000).toISOString(), name: 'Linked meal', recipeId: 'lentil-bowl', servings: 1, substitutions: {}, drinks: ['water'], medicationOccurrenceIds: [d.id], expectedDoseVersions: { [d.id]: d.version } };
+  assert.throws(() => applyCare(w, { ...c, expectedDoseVersions: { [d.id]: 0 } }, ctx()), /changed/);
+  assert.throws(() => applyCare(w, { ...c, medicationOccurrenceIds: ['unknown'] }, ctx()), /need confirmation/);
+  const june = w.medicationOccurrences.find(d => d.recipientId === 'r-june');
+  assert.throws(() => applyCare(w, { ...c, medicationOccurrenceIds: [june.id] }, ctx()), /need confirmation/);
+  const out = applyCare(w, c, ctx()).workspace; assert.throws(() => applyCare(out, c, ctx()), /already has a meal/);
+});
+test('multi-dose meals require compatible confirmed instructions and never complete medication tasks', () => {
+  const w = fixture(), dose = structuredClone(w.medicationOccurrences.find(d => d.recipientId === 'r-alex' && d.guidanceId === 'g-supp' && Date.parse(d.at) === Date.parse('2026-11-16T16:00:00Z')));
+  const second = { ...structuredClone(dose), id: 'second-dose', medicationId: 'second-medication' }; w.medicationOccurrences.push(second);
+  const command = { type: 'planMeal', recipientId: 'r-alex', start: dose.at, end: new Date(Date.parse(dose.at) + 1800000).toISOString(), name: 'Shared meal', recipeId: 'lentil-bowl', servings: 1, substitutions: {}, drinks: ['water'], medicationOccurrenceIds: [dose.id, second.id], expectedDoseVersions: { [dose.id]: 1, [second.id]: 1 } };
+  let out = applyCare(w, command, ctx()).workspace;
+  const task = out.coordination.tasks.find(t => t.id === out.meals.at(-1).taskId), medTasks = structuredClone(out.coordination.tasks.filter(t => t.medicationOccurrenceId));
+  out = applyCare(out, { type: 'record', taskId: task.id, expectedVersion: task.version, stage: 'consumed', amount: 'all', source: 'observed', observedAt: now, note: 'Actual food eaten.' }, ctx('ben')).workspace;
+  assert.deepEqual(out.coordination.tasks.filter(t => t.medicationOccurrenceId), medTasks);
+  const g = w.guidance.find(g => g.id === second.guidanceId); g.rule = 'empty_stomach';
+  assert.throws(() => applyCare(w, command, ctx()), /empty-stomach/);
+});
+test('recurring linked meals use future confirmed dose IDs and roll back atomically when a dose is missing', () => {
+  const w = fixture(), d = w.medicationOccurrences.find(d => d.recipientId === 'r-alex' && d.guidanceId === 'g-supp' && Date.parse(d.at) === Date.parse('2026-11-16T16:00:00Z'));
+  const c = { type: 'planMeal', recipientId: 'r-alex', start: d.at, end: new Date(Date.parse(d.at) + 1800000).toISOString(), name: 'Daily meal', recipeId: 'lentil-bowl', servings: 1, substitutions: {}, drinks: ['water'], medicationOccurrenceIds: [d.id], expectedDoseVersions: { [d.id]: 1 }, repeatDays: 3 };
+  const before = w.meals.length, out = applyCare(w, c, ctx()).workspace;
+  assert.equal(out.meals.length, before + 3); assert.equal(new Set(out.meals.slice(-3).flatMap(m => m.medicationOccurrenceIds)).size, 3);
+  w.medicationOccurrences = w.medicationOccurrences.filter(x => !(x.medicationId === d.medicationId && x.at.startsWith('2026-11-18')));
+  const copy = structuredClone(w); assert.throws(() => applyCare(w, c, ctx()), /future confirmed/); assert.deepEqual(w, copy);
+});
+test('calendar edits and cancellations cannot move medication occurrences', () => {
+  const w = fixture(), t = w.coordination.tasks.find(t => t.medicationOccurrenceId);
+  for (const c of [{ type: 'cancelTask', taskId: t.id, expectedVersion: t.version, scope: 'one' }, { type: 'editTask', taskId: t.id, expectedVersion: t.version, scope: 'one', title: 'Move dose', start: t.start, end: t.end }]) assert.throws(() => applyCommand(w.coordination, c, ctx()), /medication module/);
+});
+test('calendar medication times project from the canonical dose and honor cancellations', () => {
+  const { medicationCalendarState } = require('../.calendar-test-build/server/domain/care/calendarProjection.js');
+  const w = fixture(), d = w.medicationOccurrences[0]; d.at = '2026-11-15T23:00:00Z';
+  assert.equal(medicationCalendarState(w).tasks.find(t => t.medicationOccurrenceId === d.id).start, d.at);
+  d.status = 'canceled'; assert.equal(medicationCalendarState(w).tasks.find(t => t.medicationOccurrenceId === d.id).status, 'canceled');
+});
+test('a skipped reminder closes as skipped without falsely attributing a patient refusal', () => {
+  const w = fixture(), t = w.coordination.tasks.find(t => t.category === 'daily_care');
+  const out = applyCare(w, { type: 'record', taskId: t.id, expectedVersion: t.version, stage: 'skipped', source: 'observed', observedAt: now, note: 'Skipped today by agreement.' }, ctx('ben')).workspace;
+  assert.equal(out.coordination.tasks.find(x => x.id === t.id).status, 'skipped');
+  assert.equal(out.logs.at(-1).stage, 'skipped');
+  assert.equal(require('../.calendar-test-build/server/domain/coordination/service.js').coverage(out.coordination, out.coordination.tasks.find(x => x.id === t.id)), 'closed');
+});
+test('separation checks canonical dose instants after a schedule change rather than stale wall-time hints', () => {
+  const w = fixture(), m = w.meals[0], t = first(w), g = w.guidance[0], d = w.medicationOccurrences.find(d => d.guidanceId === g.id);
+  g.rule = 'separate'; g.minutesBefore = 60; g.minutesAfter = 120;
+  d.at = '2026-11-16T07:00:00Z'; t.start = '2026-11-16T07:30:00Z'; t.end = '2026-11-16T08:00:00Z';
+  assert.match(checkMeal(w, m).blocked.join(' '), /separation/);
 });

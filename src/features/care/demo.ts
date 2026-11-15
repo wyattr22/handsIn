@@ -1,7 +1,7 @@
 import type { CareWorkspace } from '../../contracts/care';
 import { makeFixtures } from '../coordination/demo/fixtures';
 import { applyCare } from '../../server/domain/care/service';
-import { localToInstant, parts } from '../../server/domain/coordination/time';
+import { addLocalDays, localToInstant, parts } from '../../server/domain/coordination/time';
 
 /** Entirely fictional, in-memory data. Source excerpts describe products, never a prescribed regimen. */
 export function makeCareFixtures(now: string): CareWorkspace {
@@ -20,8 +20,29 @@ export function makeCareFixtures(now: string): CareWorkspace {
   let serial = 0;
   const run = (c: Parameters<typeof applyCare>[1]) => { w = applyCare(w, c, { actorId: 'sarah', now, idempotencyKey: `seed-${++serial}`, newId: () => `care-demo-${++serial}` }).workspace; };
   const day = parts(now, zone).slice(0, 10), at = (time: string) => localToInstant(`${day}T${time}`, zone);
+  const identities = [
+    { ingredient: 'rivaroxaban', strength: '20 mg', form: 'tablet', route: 'oral' },
+    { ingredient: 'vitamin D3', strength: '25 mcg (1000 IU)', form: 'tablet', route: 'oral' },
+    { ingredient: 'ibuprofen', strength: '200 mg', form: 'coated tablet', route: 'oral' },
+  ];
+  w.guidance.forEach((g, i) => { g.productIdentity = identities[i]; g.sourceVersion = 'Product source checked 2026-11-15'; g.reviewedAt = now; });
+  w.guidance[0].instruction = 'Take with food.';
+  w.guidance[1].instruction = 'Take with water and a meal.';
+  w.guidance[1].requirements = [{ type: 'drink', ingredientIds: ['water'], text: 'Take with water and a meal.' }];
+  w.guidance[2].patientInstruction = 'Take with food or milk if stomach upset occurs.';
+  w.guidance.push({ id: 'g-fat', recipientId: 'r-june', version: 1, product: 'Kalydeco 150 mg oral tablet', category: 'prescription', status: 'confirmed_demo', rule: 'with_meal', localTimes: ['08:00', '20:00'], avoidIngredients: ['grapefruit'], sourceUrl: 'https://www.accessdata.fda.gov/drugsatfda_docs/label/2026/203188s044lbl.pdf', sourceText: 'Administer KALYDECO tablets or oral granules with fat-containing food.', sourceVersion: 'FDA label, Reference ID 5764298, 2026', reviewedAt: now, instruction: 'Take with food containing fat. Avoid grapefruit food and drink.', productIdentity: { ingredient: 'ivacaftor', strength: '150 mg', form: 'tablet', route: 'oral' }, requirements: [{ type: 'nutrient', nutrient: 'fat', unit: 'g', text: 'Take with food containing fat.', foodExamples: ['egg', 'yogurt'] }] });
+  w.medicationOccurrences = [];
+  // Synthetic adapter output for already-confirmed schedules. Never derive a real regimen from a label.
+  for (let offset = 0; offset < 7; offset++) for (const g of w.guidance.filter(g => g.localTimes.length)) for (const time of g.localTimes) {
+    const dose = { id: `demo-dose-${g.id}-${offset}-${time}`, medicationId: `demo-med-${g.id}`, recipientId: g.recipientId, guidanceId: g.id, guidanceVersion: g.version, version: 1, at: addLocalDays(at(time), offset, zone), timezone: zone, status: 'confirmed' as const, productIdentity: { ...g.productIdentity! } };
+    w.medicationOccurrences.push(dose);
+    w.coordination.tasks.push({ id: `calendar-${dose.id}`, circleId: 'demo-circle', recipientId: dose.recipientId, title: g.product, category: 'medication', medicationOccurrenceId: dose.id, start: dose.at, end: new Date(Date.parse(dose.at) + 15 * 60000).toISOString(), timezone: zone, status: 'open', version: 1 });
+  }
   for (const recipientId of ['r-alex', 'r-june']) {
-    for (const [time, end, recipeId, name] of [['08:00', '08:30', 'lentil-bowl', 'Breakfast'], ['18:00', '18:30', 'rice-bowl', 'Dinner']]) run({ type: 'planMeal', recipientId, start: at(time), end: at(end), recipeId: recipientId === 'r-june' ? 'lentil-bowl' : recipeId, name, servings: 1, substitutions: {} });
+    for (const [time, end, recipeId, name] of recipientId === 'r-june' ? [['08:00', '08:30', 'egg-rice', 'Breakfast'], ['20:00', '20:30', 'egg-rice', 'Evening meal']] : [['08:00', '08:30', 'lentil-bowl', 'Breakfast'], ['18:00', '18:30', 'rice-bowl', 'Dinner']]) {
+      const doses = w.medicationOccurrences!.filter(d => d.recipientId === recipientId && d.at === at(time));
+      run({ type: 'planMeal', recipientId, start: at(time), end: at(end), recipeId, name, servings: 1, substitutions: {}, drinks: recipientId === 'r-alex' && time === '08:00' ? ['water'] : [], medicationOccurrenceIds: doses.map(d => d.id), expectedDoseVersions: Object.fromEntries(doses.map(d => [d.id, d.version])) });
+    }
     run({ type: 'saveRoutine', routine: { id: '', recipientId, version: 1, title: recipientId === 'r-alex' ? 'Personal hygiene' : 'Wash & get ready', time: '09:00', weekdays: [0, 1, 2, 3, 4, 5, 6], instructions: 'Ask which hygiene tasks are wanted today. Follow the individual plan; do not assume a shower is required.', assistance: recipientId === 'r-alex' ? 'Ask before helping' : 'Offer the support June requests', source: 'Fictional family preference, not a medical order', active: true } });
     if (recipientId === 'r-alex') run({ type: 'saveRoutine', routine: { id: '', recipientId, version: 1, title: 'Skin & comfort check', time: '14:00', weekdays: [0, 1, 2, 3, 4, 5, 6], instructions: 'Demo care-plan check with consent. Describe any skin changes, sore areas or injuries factually. Record a separate observation for follow-up. Do not diagnose or stage a pressure injury.', assistance: 'Only a person authorized and comfortable helping with this check', source: 'Synthetic care-plan example — confirm a real plan with the care team', active: true } });
     run({ type: 'scheduleRoutines', recipientId, firstDay: day, days: 7 });

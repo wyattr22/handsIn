@@ -12,7 +12,7 @@ interface Props {
   onEvent: (entry: CalendarEntry) => void; onAdd: (day: string, hour?: number) => void;
   recipientName: (id: string) => string; coverageLabel: (entry: CalendarEntry) => string; canAdd: boolean;
 }
-export const kindLabel = (entry: CalendarEntry) => ({ appointment: 'Appointment', followup: 'Follow-up', visit: 'Care visit', task: 'Care task' })[entry.kind];
+export const kindLabel = (entry: CalendarEntry) => entry.kind === 'task' && entry.category === 'medication' ? 'Medication' : entry.kind === 'task' && entry.category === 'meal' ? 'Meal' : entry.kind === 'task' && entry.category === 'daily_care' ? 'Reminder' : ({ appointment: 'Appointment', followup: 'Follow-up', visit: 'Care visit', task: 'Care task' })[entry.kind];
 function dateKeys(event: KeyboardEvent<HTMLButtonElement>, day: string, onDate: Props['onDate']) {
   const steps: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
   if (event.key in steps) { event.preventDefault(); onDate(shiftDay(day, steps[event.key])); }

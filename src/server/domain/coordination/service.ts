@@ -1,7 +1,7 @@
 import type { Assignment, CoordinationCommand, CoordinationState, CoordinationView, Grant, MutationContext, Permission, Task, Conflict, CoordinationRepository } from '../../../contracts/coordination';
 import { addLocalDays, CoordinationError, localToInstant, overlaps, parts, validateInterval } from './time';
 
-const closed = new Set(['completed', 'declined_by_recipient', 'canceled']);
+const closed = new Set(['completed', 'skipped', 'declined_by_recipient', 'canceled']);
 export const assignmentPriority = (assignment: Assignment) => assignment.priority ?? 0;
 const fail = (code: string, message: string): never => { throw new CoordinationError(code, message); };
 function text(value: unknown, label: string, max = 2000): asserts value is string {
@@ -139,6 +139,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
         if (input.start !== visit.start || input.end !== visit.end || !!input.allDay !== !!visit.allDay) {
           if (linked.length && c.rescheduleLinkedTasks !== true) fail('VALIDATION_FAILED', 'Confirm rescheduling linked care tasks before changing this visit time.');
           for (const t of linked) {
+            if (t.medicationOccurrenceId || t.category === 'medication') fail('VALIDATION_FAILED', 'Medication schedules can only be changed in the medication module.');
             authorize(s, ctx.actorId, t.recipientId, 'manage', ctx.now, t.id); checkInstruction(s, t);
             if (t.recipientId !== visit.recipientId || t.circleId !== visit.circleId) fail('FORBIDDEN', 'Linked task scope mismatch.');
             t.start = new Date(Date.parse(t.start) + Date.parse(input.start) - Date.parse(visit.start)).toISOString();
@@ -218,7 +219,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
       const t = task!; current(t, c.expectedVersion); checkInstruction(s, t);
       if (t.recordingPolicy !== 'shared_care' || !['meal', 'daily_care'].includes(t.category) || t.medicationOccurrenceId) fail('FORBIDDEN', 'Shared care recording is unavailable for this task.');
       if (t.status === 'canceled') fail('VALIDATION_FAILED', 'This occurrence was canceled.');
-      if (!['in_progress', 'completed', 'declined_by_recipient', 'unable_to_complete'].includes(c.status)) fail('VALIDATION_FAILED', 'Invalid outcome.');
+      if (!['in_progress', 'completed', 'skipped', 'declined_by_recipient', 'unable_to_complete'].includes(c.status)) fail('VALIDATION_FAILED', 'Invalid outcome.');
       if (!['self_reported', 'observed', 'reported_by_other'].includes(c.source) || (c.source === 'self_reported') !== (recipient.userId === ctx.actorId)) fail('VALIDATION_FAILED', 'Choose an accurate reporting source.');
       if (!Number.isFinite(Date.parse(c.observedAt)) || Date.parse(c.observedAt) > Date.parse(ctx.now)) fail('VALIDATION_FAILED', 'Observation time must not be in the future.');
       text(c.detail, 'Outcome note', 1000);
@@ -231,6 +232,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     }
     case 'editTask': case 'cancelTask': {
       const t = task!; current(t, c.expectedVersion);
+      if (t.medicationOccurrenceId || t.category === 'medication') fail('VALIDATION_FAILED', 'Medication schedules can only be changed in the medication module.');
       if (!['one', 'future'].includes(c.scope)) fail('VALIDATION_FAILED', 'Choose one or this-and-future occurrences.');
       if (closed.has(t.status)) fail('VALIDATION_FAILED', 'Historical outcomes cannot be rewritten.');
       const affected = c.scope === 'future' && t.seriesId ? s.tasks.filter(other => other.seriesId === t.seriesId && Date.parse(other.start) >= Date.parse(t.start) && !closed.has(other.status)) : [t];
@@ -270,6 +272,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     }
   }
   function cancel(t: Task) {
+    if (t.medicationOccurrenceId || t.category === 'medication') fail('VALIDATION_FAILED', 'Medication schedules can only be changed in the medication module.');
     const recipients = new Set([...coordinators(s, t, ctx.now), ...s.assignments.filter(a => a.taskId === t.id && ['accepted', 'requested'].includes(a.status)).map(a => a.helperId)]);
     t.status = 'canceled'; t.version++; invalidate(s, t.id);
     s.assignments.filter(a => a.taskId === t.id && ['accepted', 'requested'].includes(a.status)).forEach(a => { a.status = 'canceled'; a.version++; });

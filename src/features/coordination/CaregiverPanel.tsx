@@ -13,7 +13,7 @@ interface Props {
 }
 export default function CaregiverPanel(p: Props) {
   const helperName = (id: string) => p.view.helpers.find(h => h.id === id)?.name || 'Caregiver';
-  const active = (t: Task) => !['completed', 'declined_by_recipient', 'canceled'].includes(t.status);
+  const active = (t: Task) => !['completed', 'skipped', 'declined_by_recipient', 'canceled'].includes(t.status);
   return <><h3 className={styles.sectionTitle}>Who’s helping?</h3>{p.tasks.map(task => {
     const assigned = p.view.assignments.filter(a => a.taskId === task.id && ['requested', 'accepted'].includes(a.status));
     const priorities = Array.from(new Set([0, 1, ...assigned.map(assignmentPriority)])).sort((a, b) => a - b);

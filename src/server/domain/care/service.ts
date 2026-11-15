@@ -1,9 +1,10 @@
 import type { CareCommand, CareContext, CareRepository, CareWorkspace, Meal } from '../../../contracts/care';
 import type { CareSource } from '../../../contracts/coordination';
 import { applyCommand, authorize } from '../coordination/service';
-import { CoordinationError, localToInstant, parts } from '../coordination/time';
+import { addLocalDays, CoordinationError, localToInstant, parts } from '../coordination/time';
 import { checkMeal } from './guidance';
 import { ingredients, recipes } from './catalog';
+import { doseIssues } from './requirements';
 
 function fail(message: string): never { throw new CoordinationError('VALIDATION_FAILED', message); }
 function text(value: unknown, label: string, max = 1000): asserts value is string {
@@ -29,12 +30,12 @@ export function applyCare(original: CareWorkspace, c: CareCommand, ctx: CareCont
   text(ctx.idempotencyKey, 'Request key', 200);
   if (!c || typeof c !== 'object') fail('Invalid command.');
   const w = structuredClone(original), s = w.coordination;
-  const taskId = 'taskId' in c ? c.taskId : c.type === 'reviewMeal' ? w.meals.find(m => m.id === c.mealId)?.taskId : undefined;
+  const taskId = 'taskId' in c ? c.taskId : c.type === 'reviewMeal' || c.type === 'changeMeal' ? w.meals.find(m => m.id === c.mealId)?.taskId : undefined;
   const task = s.tasks.find(t => t.id === taskId);
   const observation = 'observationId' in c ? s.observations?.find(o => o.id === c.observationId) : undefined;
   const recipientId = c.type === 'saveProfile' ? c.profile?.recipientId : c.type === 'saveRoutine' ? c.routine?.recipientId : 'recipientId' in c ? c.recipientId : task?.recipientId || observation?.recipientId;
   if (!recipientId) fail('Item unavailable.');
-  const category = ['planMeal', 'reviewMeal'].includes(c.type) ? 'meal' : c.type === 'record' ? task?.category : 'daily_care';
+  const category = ['planMeal', 'reviewMeal', 'changeMeal'].includes(c.type) ? 'meal' : c.type === 'record' ? task?.category : 'daily_care';
   const recipient = authorize(s, ctx.actorId, recipientId, ['record', 'observe'].includes(c.type) ? 'perform' : 'manage', ctx.now, taskId, category);
   if (task && task.circleId !== recipient.circleId) fail('Task scope mismatch.');
   const fingerprint = JSON.stringify(c), receipt = s.receipts.find(r => r.actorId === ctx.actorId && r.key === ctx.idempotencyKey);
@@ -54,12 +55,50 @@ export function applyCare(original: CareWorkspace, c: CareCommand, ctx: CareCont
       if (c.recipeId && !recipes.some(r => r.id === c.recipeId)) fail('Recipe unavailable.');
       const recipe = recipes.find(r => r.id === c.recipeId);
       if (!c.substitutions || Object.entries(c.substitutions).some(([from, to]) => !recipe?.ingredients.some(i => i.ingredientId === from) || !ingredients.some(i => i.id === to))) fail('Unknown ingredient substitution.');
+      if ((c.drinks || []).some(id => !ingredients.some(i => i.id === id && i.tags.includes('drink')))) fail('Choose a known drink.');
+      const links = c.medicationOccurrenceIds || [];
+      if (new Set(links).size !== links.length) fail('The same dose cannot be linked twice.');
+      for (const id of links) {
+        const dose = w.medicationOccurrences?.find(d => d.id === id && d.recipientId === recipientId);
+        if (!dose || doseIssues(w, dose).length) fail('The medication dose or food instructions need confirmation.');
+        version(dose.version, c.expectedDoseVersions?.[id]);
+        if (w.meals.some(m => m.medicationOccurrenceIds?.includes(id) && w.coordination.tasks.some(t => t.id === m.taskId && t.status !== 'canceled'))) fail('This medication dose already has a meal. Open the existing meal instead.');
+      }
       const id = execute({ type: 'createTask', input: { recipientId, title: c.name, category: 'meal', recordingPolicy: 'shared_care', start: c.start, end: c.end, timezone: recipient.timezone } }, 'task');
-      const meal: Meal = { id: ctx.newId(), taskId: id, name: c.name.trim(), recipeId: c.recipeId, servings: c.servings, substitutions: c.substitutions, version: 1 };
+      const meal: Meal = { id: ctx.newId(), taskId: id, name: c.name.trim(), recipeId: c.recipeId, servings: c.servings, substitutions: c.substitutions, version: 1, medicationOccurrenceIds: links, drinks: c.drinks || [] };
       w.meals.push(meal);
       const checked = checkMeal(w, meal);
       if (checked.blocked.length) fail(checked.blocked.join(' '));
-      resultId = meal.id; break;
+      resultId = meal.id;
+      const count = c.repeatDays ?? 1;
+      if (!Number.isInteger(count) || count < 1 || count > 14) fail('Repeat up to 14 days.');
+      const seriesTasks = [id];
+      for (let offset = 1; offset < count; offset++) {
+        const start = addLocalDays(c.start, offset, recipient.timezone), end = addLocalDays(c.end, offset, recipient.timezone);
+        const nextDoses = links.map(id => {
+          const originalDose = w.medicationOccurrences!.find(d => d.id === id)!;
+          const nextAt = addLocalDays(originalDose.at, offset, recipient.timezone);
+          return w.medicationOccurrences!.find(d => d.recipientId === recipientId && d.medicationId === originalDose.medicationId && d.at === nextAt && d.status === 'confirmed') || fail('A future confirmed medication occurrence is missing. No meals were added.');
+        });
+        const result = applyCare(w, { ...c, start, end, repeatDays: 1, medicationOccurrenceIds: nextDoses.map(d => d.id), expectedDoseVersions: Object.fromEntries(nextDoses.map(d => [d.id, d.version])) }, { ...ctx, idempotencyKey: `${ctx.idempotencyKey}:day-${offset}` });
+        Object.assign(w, result.workspace);
+        seriesTasks.push(w.meals.find(m => m.id === result.resultId)!.taskId);
+      }
+      if (count > 1) { const seriesId = ctx.newId(); for (const taskId of seriesTasks) w.coordination.tasks.find(t => t.id === taskId)!.seriesId = seriesId; }
+      break;
+    }
+    case 'changeMeal': {
+      const m = w.meals.find(m => m.id === c.mealId)!; version(m.version, c.expectedVersion);
+      if (!task || ['completed', 'skipped', 'declined_by_recipient', 'canceled'].includes(task.status)) fail('A historical or canceled meal plan cannot be changed.');
+      const recipe = recipes.find(r => r.id === c.recipeId);
+      if (c.recipeId && !recipe) fail('Recipe unavailable.');
+      if (!Number.isFinite(c.servings) || c.servings <= 0 || c.servings > 20) fail('Check the number of servings.');
+      if (Object.entries(c.substitutions).some(([from, to]) => !recipe?.ingredients.some(i => i.ingredientId === from) || !ingredients.some(i => i.id === to)) || c.drinks.some(id => !ingredients.some(i => i.id === id && i.tags.includes('drink')))) fail('Unknown food or drink.');
+      const candidate = { ...m, recipeId: c.recipeId, servings: c.servings, substitutions: c.substitutions, drinks: c.drinks };
+      const check = checkMeal(w, candidate);
+      if (check.fingerprint !== c.fingerprint) fail('The meal or medication instructions changed. Review them again.');
+      if (check.blocked.length) fail(check.blocked.join(' '));
+      Object.assign(m, candidate, { version: m.version + 1, reviewedFingerprint: undefined }); resultId = m.id; break;
     }
     case 'reviewMeal': {
       const m = w.meals.find(m => m.id === c.mealId)!; version(m.version, c.expectedVersion);
@@ -87,16 +126,16 @@ export function applyCare(original: CareWorkspace, c: CareCommand, ctx: CareCont
       source(w, recipientId, c.source, c.observedAt, ctx); text(c.note, 'Record note');
       const meal = w.meals.find(m => m.taskId === taskId);
       if (task.category === 'meal' && !meal) fail('Meal plan is unavailable.');
-      const stages = task.category === 'meal' ? ['prepared', 'offered', 'consumed', 'declined', 'needs_help'] : ['completed', 'declined', 'needs_help'];
+      const stages = task.category === 'meal' ? ['prepared', 'offered', 'consumed', 'declined', 'needs_help'] : ['completed', 'skipped', 'declined', 'needs_help'];
       if (!stages.includes(c.stage)) fail('Choose an appropriate outcome.');
       if (c.stage === 'consumed' && !['none', 'some', 'most', 'all'].includes(c.amount || '')) fail('Record how much was eaten.');
       const prior = effectiveLog(w, task.id);
       if (c.correctsId) {
         if (!prior || prior.id !== c.correctsId) fail('Correct the latest record.');
         text(c.reason, 'Correction reason', 500);
-      } else if (['completed', 'declined_by_recipient'].includes(task.status)) fail('Already recorded. Choose Correct last record.');
+      } else if (['completed', 'skipped', 'declined_by_recipient'].includes(task.status)) fail('Already recorded. Choose Correct last record.');
       const latestAudit = w.coordination.audit.filter(e => e.taskId === task.id && e.action === 'careOutcome').at(-1);
-      const status = c.stage === 'completed' || (c.stage === 'consumed' && c.amount !== 'none') ? 'completed' : c.stage === 'declined' ? 'declined_by_recipient' : c.stage === 'needs_help' || c.amount === 'none' ? 'unable_to_complete' : 'in_progress';
+      const status = c.stage === 'completed' || (c.stage === 'consumed' && c.amount !== 'none') ? 'completed' : c.stage === 'skipped' ? 'skipped' : c.stage === 'declined' ? 'declined_by_recipient' : c.stage === 'needs_help' || c.amount === 'none' ? 'unable_to_complete' : 'in_progress';
       execute({ type: 'careOutcome', taskId: task.id, expectedVersion: c.expectedVersion, status, source: c.source, observedAt: c.observedAt,
         detail: `${c.stage}${c.amount ? ` (${c.amount})` : ''}: ${c.note}`, correctsAuditId: c.correctsId ? latestAudit?.id : undefined, correctionReason: c.reason }, 'outcome');
       const log = { id: ctx.newId(), taskId: task.id, actorId: ctx.actorId, at: ctx.now, observedAt: c.observedAt, source: c.source, stage: c.stage, amount: c.amount, note: c.note.trim(), supersedesId: c.correctsId, reason: c.reason };
@@ -109,7 +148,7 @@ export function applyCare(original: CareWorkspace, c: CareCommand, ctx: CareCont
       text(r.title, 'Routine title', 160); text(r.instructions, 'Care instructions'); text(r.source, 'Care-plan source'); text(r.assistance, 'Assistance');
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(r.time) || !Array.isArray(r.weekdays) || !r.weekdays.length || r.weekdays.some(d => !Number.isInteger(d) || d < 0 || d > 6) || typeof r.active !== 'boolean') fail('Choose a valid time and days.');
       if (old) {
-        for (const t of w.coordination.tasks.filter(t => t.seriesId === r.id && Date.parse(t.start) >= Date.parse(ctx.now) && !['completed', 'declined_by_recipient', 'canceled'].includes(t.status))) execute({ type: 'cancelTask', taskId: t.id, expectedVersion: t.version, scope: 'one' }, `retire-${t.id}`);
+        for (const t of w.coordination.tasks.filter(t => t.seriesId === r.id && Date.parse(t.start) >= Date.parse(ctx.now) && !['completed', 'skipped', 'declined_by_recipient', 'canceled'].includes(t.status))) execute({ type: 'cancelTask', taskId: t.id, expectedVersion: t.version, scope: 'one' }, `retire-${t.id}`);
         Object.assign(old, r, { version: old.version + 1 }); resultId = old.id;
       } else { resultId = ctx.newId(); w.routines.push({ ...r, id: resultId, version: 1 }); }
       break;
@@ -120,7 +159,7 @@ export function applyCare(original: CareWorkspace, c: CareCommand, ctx: CareCont
         const date = new Date(`${c.firstDay}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + i);
         const day = date.toISOString().slice(0, 10);
         for (const routine of w.routines.filter(r => r.recipientId === recipientId && r.active && r.weekdays.includes(date.getUTCDay()))) {
-          if (w.coordination.tasks.some(t => t.seriesId === routine.id && parts(t.start, t.timezone).startsWith(day) && (t.instructionVersion === routine.version || ['completed', 'declined_by_recipient'].includes(t.status)))) continue;
+          if (w.coordination.tasks.some(t => t.seriesId === routine.id && parts(t.start, t.timezone).startsWith(day) && (t.instructionVersion === routine.version || ['completed', 'skipped', 'declined_by_recipient'].includes(t.status)))) continue;
           const instructionId = `${routine.id}-v${routine.version}`;
           if (!w.coordination.instructions.some(x => x.id === instructionId)) w.coordination.instructions.push({ id: instructionId, circleId: recipient.circleId, recipientId, version: routine.version, current: true, text: `${routine.instructions} Assistance: ${routine.assistance}. Source: ${routine.source}` });
           const start = localToInstant(`${day}T${routine.time}`, recipient.timezone);
@@ -169,6 +208,7 @@ export function projectCare(w: CareWorkspace, actor: string, now: string): CareW
   const tasks = w.coordination.tasks.filter(t => ids.has(t.recipientId) && canCare(w, actor, t.recipientId, 'read', now, t.id) && w.coordination.recipients.some(r => r.id === t.recipientId && r.circleId === t.circleId));
   const taskIds = new Set(tasks.map(t => t.id));
   return structuredClone({ ...w,
+    medicationOccurrences: w.medicationOccurrences?.filter(d => ids.has(d.recipientId)),
     profiles: w.profiles.filter(p => ids.has(p.recipientId)), guidance: w.guidance.filter(g => ids.has(g.recipientId)),
     meals: w.meals.filter(m => taskIds.has(m.taskId)), routines: w.routines.filter(r => ids.has(r.recipientId)), logs: w.logs.filter(l => taskIds.has(l.taskId)),
     coordination: { ...w.coordination, recipients: w.coordination.recipients.filter(r => ids.has(r.id)), tasks,

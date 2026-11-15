@@ -1,5 +1,37 @@
 # Meals & daily care
 
+## Simplified medication-linked experience (November 15 update)
+
+The default view now answers: **what to eat/drink, which confirmed dose it supports, and when**. Each meal card shows one suggestion and its recipe action. Medication source details, macronutrient explanations, shopping/progress, assignments and history are expandable. Daily Care is a chronological reminder checklist, including references to the same meal tasks; it has no second meal or care schedule. Outcomes are Done, Skipped and Need help. `skipped` is an additive shared task status that closes a reminder without falsely claiming that the patient refused it; a future production enum/schema must accommodate this status before connection.
+
+### Medication food contracts
+
+- `FoodGuidance` now supports exact ingredient/strength/form/route, source/review versions, structured food/drink/nutrient requirements, patient directions and explicit conflict flags. Differing structured patient/product rules or requirements require confirmation rather than automatically choosing one.
+- Nutrient requirements support fat, carbohydrate, protein and energy, with optional **explicitly sourced** minimums and units. Ordinary with-food rules display “No specific fat, carbohydrate, or protein amount is stated.” No gram/calorie threshold is invented. Non-numerical fat instructions remain non-numerical.
+- Numerical recipe suitability requires verified nutrition data for every ingredient, matching quantity units and a source/version. Servings are calculated from recipe yield. Missing, unverified or incompatible data remains unconfirmed; a known shortfall blocks the suggestion. The demo intentionally ships no fabricated nutrition database. Synthetic numerical data exists only in tests.
+- Qualitative label food examples can inform suggestions without being turned into mandated foods or portions. The added fictional Kalydeco **ivacaftor 150 mg oral tablet** example uses the [2026 FDA product label, Reference ID 5764298](https://www.accessdata.fda.gov/drugsatfda_docs/label/2026/203188s044lbl.pdf): food containing fat, no invented gram minimum, and avoidance of grapefruit. Egg is one label example, offered in an optional simple egg/rice recipe. This is not a recommendation to start the medication or a regimen inferred from its label. June retains unknown allergies and visible confirmation requirements.
+- `MedicationFoodOccurrence` is a read-only projection of a canonical confirmed medication occurrence. `Meal.medicationOccurrenceIds` references its IDs. Planning validates recipient, exact product, instruction version, source, dose version, confirmation and duplicate links. Multiple links must have compatible requirements. Acknowledging a food review never clears unresolved allergy, instruction, timing or nutrition warnings.
+- Meal timing is proposed for user confirmation. With-food instructions receive no invented before/after window. Empty-stomach/separation checks use explicit intervals and canonical dose instants, including adjacent days. Legacy local-time hints are only a fallback when no occurrence adapter is supplied. Clock-change ambiguity fails explicitly.
+- Daily recurring meals can be planned for up to 14 days (UI offers seven). Every linked day requires its own already-confirmed dose IDs. Missing future occurrences or a clock-change error roll back the entire request. Repeated meals share a calendar series; historical records remain immutable. Medication times are never created or moved by meal planning.
+- The calendar projects medication times from those canonical occurrences and suppresses canceled ones. Medication schedule edits/cancellations and administration are rejected in the general calendar/care engine; the medication module owns them. Meal outcomes do not update medication outcomes.
+
+### Adapter boundaries
+
+The scanner branch at `3d03f47` currently exposes `MedicationDraft`, field review statuses and `scheduleTimes`; that draft is **not** a confirmed occurrence API. A production adapter must resolve real recipient/medication/occurrence IDs and confirmed exact-product fields from the medication owner. Do not manufacture production occurrences from OCR text or local-time strings, and do not treat a draft acknowledgement as an authenticated clinical review. The demo explicitly constructs fictional adapter snapshots and read-only calendar medication references for seven days.
+
+`MedicationFoodPort.getOccurrences` defines the missing host boundary. Production authentication, encrypted persistence, medication providers, reliable nutrition providers and real phone delivery remain unconnected. The source/version fields are provenance contracts, not independent clinical verification. Existing recipient/category permissions, temporary access, primary/secondary responsibility, idempotency, corrections, observations and outbox remain in use.
+
+### Review steps
+
+1. Open `/care/demo`. Alex has a breakfast linked to the supplement/water instruction and dinner linked to a prescription with food. June demonstrates an explicit fat-containing-food instruction with no invented numerical target.
+2. Open Medication food instructions, then a product, to read macronutrient details, exact product metadata and source. Unknown information stays visible even after a coordinator acknowledges review.
+3. Move to the next day. Review a meal for a confirmed dose or use Plan a meal, select a dose, review the proposed time and confirm. Check the same task in `/calendar/demo`; use the recipient filter or Day view when a month cell has more events than it can show.
+4. Open a meal's Details > Other meal ideas to change its recipe/servings or substitutions. Known conflicts block saving a suggestion. Actual consumption remains recordable regardless of the planned recipe.
+5. Open Daily care. Use Done to record a reminder; the form also offers Skipped and Need help, accurate source attribution and an observation time. Detailed instructions/history are hidden until requested. Optional observations and their independent follow-up are under a separate expandable section.
+6. Verify Ben can record as an authorized secondary, Alex self-reports for Alex only, and guest/unrelated accounts receive no care profiles. Check that the calendar reflects the same outcome without changing medication administration.
+
+Validation extends the existing suites with exact-product/conflict checks, explicit versus unspecified macronutrients, missing nutrition data, servings/units, food/drink substitutions, dose-link races/duplicates, compatible multi-dose meals, recurring rollback, canonical medication calendar times, and skipped reminders. Browser checks cover clear cards, planning, shared navigation, recording, sources, mobile layout, and keyboard controls. The original implementation notes below remain background for the unchanged permission/persistence boundaries; this section supersedes their earlier UI and medication-link descriptions.
+
 Feature branch: `codex/meals-and-daily-care`, based on calendar/delegation commit `9b9324c`. Main and the other feature branches are not changed. The dependency is intentional: every meal and scheduled routine uses the existing coordination task, assignment, audit and notification structures.
 
 ## Run and review

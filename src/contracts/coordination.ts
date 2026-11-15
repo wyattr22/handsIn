@@ -1,5 +1,5 @@
 /** Proposed W03 contracts. Host adapters supply verified identity, grants and atomic persistence. */
-export type TaskStatus = 'open' | 'in_progress' | 'completed' | 'declined_by_recipient' | 'unable_to_complete' | 'canceled';
+export type TaskStatus = 'open' | 'in_progress' | 'completed' | 'skipped' | 'declined_by_recipient' | 'unable_to_complete' | 'canceled';
 export type AssignmentStatus = 'requested' | 'accepted' | 'declined' | 'expired' | 'canceled';
 export type Permission = 'read' | 'manage' | 'perform';
 export interface Recipient { id: string; circleId: string; name: string; timezone: string; userId?: string }
