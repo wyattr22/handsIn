@@ -14,3 +14,4 @@ out/
 .people-test-output/
 public/scanner-assets/
 .backend-handoff/
+.eros-test-build/
