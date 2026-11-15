@@ -1,0 +1,42 @@
+{
+  "fixtureFormat": "coverage-preparation-scenarios-v1",
+  "warning": "Entirely fictional. Scenario data only; not an adopted API schema, security adapter or operational care instructions.",
+  "clock": "2026-11-15T18:00:00Z",
+  "circleId": "demo-circle",
+  "people": [
+    { "id": "demo-maya", "name": "Maya", "purpose": "Regular helper and authorized demo coordinator" },
+    { "id": "demo-casey", "name": "Casey", "purpose": "Known friend; verified identity simulated only; no standing recipient access" },
+    { "id": "demo-jordan", "name": "Jordan", "purpose": "Backup demo coordinator" },
+    { "id": "demo-unrelated", "name": "Unrelated account", "purpose": "Negative access scenario" }
+  ],
+  "recipients": [
+    { "id": "demo-nora", "name": "Nora", "timezone": "America/Los_Angeles", "locationLabel": "Demo home A; not a real address", "preference": "Ask before putting things away; I like choosing where they go." },
+    { "id": "demo-eli", "name": "Eli", "timezone": "America/New_York", "locationLabel": "Demo home B; not a real address", "preference": "Ask whether I would like company before starting the visit." }
+  ],
+  "instructions": [
+    { "id": "demo-bag", "recipientId": "demo-nora", "version": 2, "reviewedBy": "demo-maya", "reviewedAt": "2026-11-14T20:00:00Z", "source": "Synthetic household note", "text": "Bag is on the bench beside the front door. Ask Nora where she would like it placed." },
+    { "id": "demo-nora-visit", "recipientId": "demo-nora", "version": 1, "reviewedBy": "demo-maya", "reviewedAt": "2026-11-14T20:00:00Z", "source": "Synthetic recipient preference", "text": "Ask Nora if she would like company. A declined visit does not require another attempt." },
+    { "id": "demo-eli-visit", "recipientId": "demo-eli", "version": 1, "reviewedBy": "demo-jordan", "reviewedAt": "2026-11-14T20:00:00Z", "source": "Synthetic recipient preference", "text": "Ask Eli whether he would like a short conversation." }
+  ],
+  "tasks": [
+    { "id": "demo-task-bag", "recipientId": "demo-nora", "version": 1, "instructionId": "demo-bag", "instructionVersion": 2, "category": "household", "title": "Bring the grocery bag inside", "start": "2026-11-15T22:00:00Z", "end": "2026-11-15T23:00:00Z", "status": "open" },
+    { "id": "demo-task-company", "recipientId": "demo-nora", "version": 1, "instructionId": "demo-nora-visit", "instructionVersion": 1, "category": "companionship", "title": "Sit together for a short visit", "start": "2026-11-15T22:00:00Z", "end": "2026-11-15T23:00:00Z", "status": "open" },
+    { "id": "demo-task-eli", "recipientId": "demo-eli", "version": 1, "instructionId": "demo-eli-visit", "instructionVersion": 1, "category": "companionship", "title": "A short visit with Eli", "start": "2026-11-16T18:00:00Z", "end": "2026-11-16T19:00:00Z", "status": "open" }
+  ],
+  "requests": [
+    { "id": "demo-coverage-nora", "recipientId": "demo-nora", "taskIds": ["demo-task-bag", "demo-task-company"], "coordinatorId": "demo-maya", "backupId": "demo-jordan", "intendedHelperId": "demo-casey", "originalCanStillAttend": false, "respondBy": "2026-11-15T19:00:00Z", "prepareFrom": "2026-11-14T22:00:00Z", "executeFrom": "2026-11-15T22:00:00Z", "accessUntil": "2026-11-15T23:00:00Z", "state": "seeking", "invitationState": "pending" },
+    { "id": "demo-coverage-eli", "recipientId": "demo-eli", "taskIds": ["demo-task-eli"], "coordinatorId": "demo-jordan", "backupId": "demo-maya", "intendedHelperId": "demo-casey", "originalCanStillAttend": true, "respondBy": "2026-11-16T16:00:00Z", "prepareFrom": "2026-11-15T18:00:00Z", "executeFrom": "2026-11-16T18:00:00Z", "accessUntil": "2026-11-16T19:00:00Z", "state": "seeking", "invitationState": "pending" }
+  ],
+  "scenarios": [
+    { "id": "happy-return", "requestId": "demo-coverage-nora", "steps": ["Casey accepts at 18:05Z", "Scoped handoff opens after atomic success", "Casey reports arrival at 22:02Z", "Bag result saved done at 22:20Z", "Nora declines company", "Casey submits report at 22:40Z"], "expect": ["Coverage confirmed only after acceptance", "One done and one recipient-declined result", "Report submission closes temporary access", "Maya receives follow-up to review recipient preference; no automatic repeat visit"] },
+    { "id": "ignored", "requestId": "demo-coverage-nora", "steps": ["Advance server clock to 19:00Z with no response"], "expect": ["Invitation expired", "Two tasks still uncovered", "Coordinator Maya shown", "No claim that any care did not happen"] },
+    { "id": "accept-races-cancel", "requestId": "demo-coverage-nora", "steps": ["Accept and revoke use the same coverage version concurrently"], "expect": ["One serialized winner", "If revoke wins, no assignment/grant", "If accept wins, stale cancellation conflicts and must refresh before explicit revocation"] },
+    { "id": "stale-instruction", "requestId": "demo-coverage-nora", "steps": ["Accept reviewed bag version 2", "Source changes to version 3", "Attempt result against version 2"], "expect": ["Affected result rejected", "Current instructions reviewed before action", "No automatic assumption that physical care was repeated"] },
+    { "id": "timeout-after-save", "requestId": "demo-coverage-nora", "steps": ["Server saves bag result for operation demo-op-1", "Response is lost", "Client retries identical demo-op-1"], "expect": ["One effective outcome and same receipt", "UI reconciles saved status", "Changed payload with same key fails"] },
+    { "id": "forwarded-link", "requestId": "demo-coverage-nora", "steps": ["Unrelated account attempts preview and redemption"], "expect": ["Generic unavailable response", "No address, name or task disclosure", "No grant"] },
+    { "id": "recipient-isolation", "requestId": "demo-coverage-nora", "steps": ["Casey accepts Nora only", "Casey requests Eli handoff", "Casey later accepts separate Eli invitation before its deadline", "Nora grant expires"], "expect": ["Eli handoff denied before independent acceptance", "After both accepted, recipient details never combine", "Nora expiry does not revoke Eli grant"] },
+    { "id": "exact-expiry", "requestId": "demo-coverage-nora", "steps": ["Open handoff with a valid accepted grant", "Advance server time to 23:00Z", "Attempt read, result write and any private resource fetch"], "expect": ["All sensitive operations denied", "No hidden reporting grace", "Client clears sensitive state; late report goes through coordinator"] },
+    { "id": "partial-offer", "requestId": "demo-coverage-nora", "steps": ["Casey offers to do only bag task"], "expect": ["No acceptance yet", "Coordinator reviews/reissues narrower request", "Company task remains uncovered unless separately handled"] },
+    { "id": "medication-boundary", "requestId": "demo-coverage-nora", "steps": ["Attempt to add medication occurrence to everyday-task bundle or generic result action"], "expect": ["First slice refuses unsupported task", "Later integration must invoke medication-owned instructions and result service"] }
+  ]
+}
