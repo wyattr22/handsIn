@@ -4,12 +4,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useMedicationFlow } from "@/components/medication-scanner/MedicationFlowProvider";
 import { applyScheduleSuggestion } from "@/lib/medications/schedule";
-import { demoRecipients } from "@/lib/medications/types";
 
 export default function SchedulePage() {
   const router = useRouter();
-  const { draft, updateDraft, hydrated } = useMedicationFlow();
-  const recipient = demoRecipients.find((item) => item.id === draft.recipientId) ?? demoRecipients[0];
+  const { draft, updateDraft, hydrated, recipients } = useMedicationFlow();
+  const recipient = recipients.find((item) => item.id === draft.recipientId) ?? recipients[0];
   useEffect(() => {
     if (hydrated && !draft.scheduleReason) updateDraft(applyScheduleSuggestion(draft, recipient));
   }, [hydrated, draft, recipient, updateDraft]);

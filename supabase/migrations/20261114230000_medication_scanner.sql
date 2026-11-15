@@ -12,6 +12,20 @@ create table public.profiles (
   created_at timestamptz not null default now()
 );
 
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.profiles (id, display_name)
+  values (new.id, coalesce(new.raw_user_meta_data ->> 'display_name', split_part(new.email, '@', 1), 'Caregiver'))
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
 create table public.care_circles (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -181,6 +195,28 @@ returns boolean language sql stable security definer set search_path = '' as $$
   );
 $$;
 
+create or replace function public.create_care_circle(circle_name text, recipient_name text)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  new_circle_id uuid;
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if length(trim(circle_name)) < 2 or length(trim(recipient_name)) < 1 then
+    raise exception 'Circle and recipient names are required';
+  end if;
+  insert into public.profiles (id, display_name)
+  values (auth.uid(), coalesce((select email from auth.users where id = auth.uid()), 'Caregiver'))
+  on conflict (id) do nothing;
+  insert into public.care_circles (name, created_by)
+  values (trim(circle_name), auth.uid()) returning id into new_circle_id;
+  insert into public.care_circle_memberships (circle_id, user_id, role)
+  values (new_circle_id, auth.uid(), 'coordinator');
+  insert into public.care_recipients (circle_id, display_name)
+  values (new_circle_id, trim(recipient_name));
+  return new_circle_id;
+end;
+$$;
+
 alter table public.profiles enable row level security;
 alter table public.care_circles enable row level security;
 alter table public.care_circle_memberships enable row level security;
@@ -199,6 +235,7 @@ alter table public.care_audit_events enable row level security;
 
 create policy "profiles readable by self" on public.profiles for select using (id = auth.uid());
 create policy "profiles created by self" on public.profiles for insert with check (id = auth.uid());
+create policy "profiles updated by self" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "circles visible to members" on public.care_circles for select using (public.is_circle_member(id));
 create policy "memberships visible to members" on public.care_circle_memberships for select using (public.is_circle_member(circle_id));
 create policy "memberships managed by coordinators" on public.care_circle_memberships for all using (public.is_circle_coordinator(circle_id)) with check (public.is_circle_coordinator(circle_id));

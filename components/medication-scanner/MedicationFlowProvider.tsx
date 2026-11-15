@@ -1,19 +1,21 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { emptyMedicationDraft, type MedicationDraft } from "@/lib/medications/types";
+import { demoRecipients, emptyMedicationDraft, type MedicationDraft, type Recipient } from "@/lib/medications/types";
 
 type FlowContextValue = {
   draft: MedicationDraft;
   updateDraft: (patch: Partial<MedicationDraft>) => void;
   resetDraft: () => void;
   hydrated: boolean;
+  recipients: Recipient[];
+  isDemoMode: boolean;
 };
 
 const FlowContext = createContext<FlowContextValue | null>(null);
 const storageKey = "handsin-medication-draft-v1";
 
-export function MedicationFlowProvider({ children }: { children: React.ReactNode }) {
+export function MedicationFlowProvider({ children, initialRecipients = [] }: { children: React.ReactNode; initialRecipients?: Recipient[] }) {
   const [draft, setDraft] = useState<MedicationDraft>(emptyMedicationDraft);
   const [hydrated, setHydrated] = useState(false);
 
@@ -33,7 +35,8 @@ export function MedicationFlowProvider({ children }: { children: React.ReactNode
     setDraft((current) => ({ ...current, ...patch }));
   }, []);
   const resetDraft = useCallback(() => setDraft(emptyMedicationDraft), []);
-  const value = useMemo(() => ({ draft, updateDraft, resetDraft, hydrated }), [draft, updateDraft, resetDraft, hydrated]);
+  const recipients = initialRecipients.length ? initialRecipients : demoRecipients;
+  const value = useMemo(() => ({ draft, updateDraft, resetDraft, hydrated, recipients, isDemoMode: !initialRecipients.length }), [draft, updateDraft, resetDraft, hydrated, recipients, initialRecipients.length]);
 
   return <FlowContext.Provider value={value}>{children}</FlowContext.Provider>;
 }
