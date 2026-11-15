@@ -28,8 +28,14 @@ let capturing = false;
 let frame = 0;
 async function captureLoop() {
   while (capturing) {
-    frame += 1;
-    await page.screenshot({ path: path.join(framesDir, `${String(frame).padStart(6, "0")}.jpg`), type: "jpeg", quality: 78, animations: "allow" });
+    try {
+      const nextFrame = frame + 1;
+      await page.screenshot({ path: path.join(framesDir, `${String(nextFrame).padStart(6, "0")}.jpg`), type: "jpeg", quality: 78, animations: "allow" });
+      frame = nextFrame;
+    } catch (error) {
+      if (page.isClosed()) break;
+      await page.waitForTimeout(80);
+    }
     await page.waitForTimeout(35);
   }
 }
@@ -98,17 +104,40 @@ await point(page.getByRole("button", { name: /June Morgan/ }), true);
 await point(page.getByRole("button", { name: "Continue" }), true);
 await point(page.getByRole("button", { name: "Explore with a synthetic sample report" }), true);
 await page.waitForURL(/\/review$/);
-await page.mouse.wheel(0, 650);
-await page.waitForTimeout(650);
-await page.mouse.wheel(0, 500);
+const reviewStatuses = page.locator('select[aria-label$="review status"]');
+for (let index = 0; index < await reviewStatuses.count(); index += 1) {
+  const status = reviewStatuses.nth(index);
+  await point(status);
+  await status.selectOption("confirmed");
+  await page.waitForTimeout(180);
+}
+await point(page.getByRole("button", { name: "Build comprehensive report" }), true);
+await page.waitForURL(/\/report$/);
 await page.waitForTimeout(500);
+for (const distance of [520, 560, 560]) {
+  await page.mouse.wheel(0, distance);
+  await page.waitForTimeout(700);
+}
 
 // Filter the shared calendar and scroll through scheduled care.
 await open("/calendar/demo");
 await point(page.getByRole("button", { name: "June", exact: true }), true);
 await page.waitForTimeout(500);
-await page.mouse.wheel(0, 540);
+await page.mouse.wheel(0, 480);
+await page.waitForTimeout(700);
+await page.mouse.wheel(0, -480);
+await page.waitForTimeout(500);
+await point(page.getByRole("button", { name: "+ Add event" }), true);
+const lovedOne = page.getByLabel("Loved one");
+await point(lovedOne);
+await lovedOne.selectOption({ label: "June Morgan" });
+await typeInto("e.g. Follow-up with Dr. Lee", "Family care check-in");
+await typeInto("Where to go", "Community Health Center");
+await typeInto("Anything the caregiver needs to know", "Bring the shared care notes");
+await point(page.getByRole("button", { name: "Save event" }), true);
 await page.waitForTimeout(650);
+await page.mouse.wheel(0, 420);
+await page.waitForTimeout(750);
 
 await open("/demo");
 await page.waitForTimeout(1200);
