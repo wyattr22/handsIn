@@ -93,4 +93,3 @@ Current assessment: execution is unresolved rather than proven by source; proble
 For each conversation or use session record date, participant role, how recruited, question/task, observed result, exact quote if permitted, assistance required and limits. Count distinct people and families separately. Describe fictional-data usability testing as such. A teammate running the demo is not a target customer.
 
 If no external evidence exists, say the family experience motivated the prototype and describe the next validation step. Do not transform a proposed pilot into an ongoing pilot or a warm introduction into a partnership.
-

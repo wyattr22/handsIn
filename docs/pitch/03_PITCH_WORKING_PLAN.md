@@ -166,4 +166,3 @@ Produce these when needed, rather than treating all as already completed:
 - Mock judging feedback and targeted revision.
 
 Submission copy should state only what is actually submitted and credit each AI tool, library and asset correctly. Do not submit forms, publish a deck/video, or contact anyone without the appropriate user instruction.
-

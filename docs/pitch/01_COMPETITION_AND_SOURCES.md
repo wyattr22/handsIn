@@ -89,4 +89,3 @@ The visually emphasized sections on p15 are **1, 2, 4, 8, 10**. Market, business
 - The notes' phrase about finishing the build does not establish that all features work.
 
 No deck should simply reproduce the workshop's ten-section investor outline. Use the format that makes the rubric easiest to observe.
-

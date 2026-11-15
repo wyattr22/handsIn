@@ -97,4 +97,3 @@ When a decision changes, update its current status and retain a short dated expl
 3. Rehearse one complete flow with actual clicks to finish around 3:40, then prepare screenshots and a short recording as fallback.
 
 Keep the original evidence distinct from later improvements. A successful deployment status proves a build deployed, not that the hosted backend, permissions, uploads, or full demo work.
-
