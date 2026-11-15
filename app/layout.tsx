@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./health.css";
 
 export const metadata: Metadata = {
   title: "HandsIn — Care is a team effort",

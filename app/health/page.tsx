@@ -1,0 +1,5 @@
+import Link from "next/link";
+
+export default function HealthPage() {
+  return <main className="health-app"><header><Link className="health-wordmark" href="/">Hands<span>In</span></Link><span className="health-avatar">WR</span></header><section className="health-home"><p className="health-kicker">Health records</p><h1>Turn scattered results into a visit-ready record.</h1><div className="health-summary-strip"><div><strong>0</strong><span>reports reviewed</span></div><div><strong>0</strong><span>questions prepared</span></div></div><div className="health-empty"><div className="document-mark" aria-hidden="true"><i /><b>+</b></div><h2>Add the first report</h2><p>Photograph or upload a blood or urine report. Confirm every value against the source before it joins the family record.</p><Link className="health-primary" href="/health/new/recipient">Scan a health record</Link></div></section><nav className="health-nav"><Link href="/">Today</Link><span>Medications</span><span>Calendar</span><span>Care</span><Link className="active" href="/health">Records</Link></nav></main>;
+}
