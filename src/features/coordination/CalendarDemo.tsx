@@ -10,13 +10,20 @@ import EventEditor, { roleLabel } from './EventEditor';
 import CaregiverPanel from './CaregiverPanel';
 import { calendarTitle, entriesOnDay, formatDay, movePeriod, shiftDay, timeRange, weekDays } from './calendarMath';
 import type { CalendarEntry, CalendarMode } from './calendarMath';
-import { makeFixtures } from './demo/fixtures';
+import { useDemoWorkspace } from '../care/DemoWorkspace';
 import styles from './calendar.module.css';
 
 const active = (task: Task) => !['completed', 'declined_by_recipient', 'canceled'].includes(task.status);
 export default function CalendarDemo({ initialNow }: { initialNow: string }) {
-  const [state, setState] = useState(() => makeFixtures(initialNow));
-  const [now, setNow] = useState(initialNow), [actor, setActor] = useState('sarah');
+  const demo = useDemoWorkspace();
+  if (!demo.workspace) return <main className={styles.shell}><p>Loading the fictional care calendar…</p></main>;
+  return <CalendarContent initialNow={initialNow} />;
+}
+function CalendarContent({ initialNow }: { initialNow: string }) {
+  const { workspace, setWorkspace, actor, setActor } = useDemoWorkspace();
+  const state = workspace!.coordination;
+  const setState = (coordination: CoordinationState) => setWorkspace(w => w && ({ ...w, coordination }));
+  const [now, setNow] = useState(initialNow);
   const [recipient, setRecipient] = useState('all'), [filterKind, setFilterKind] = useState('all'), [filterCoverage, setFilterCoverage] = useState('all');
   const [mode, setMode] = useState<CalendarMode>('month'), [listView, setListView] = useState(false);
   const [selected, setSelected] = useState(parts(initialNow, 'America/Los_Angeles').slice(0, 10));
@@ -97,6 +104,7 @@ export default function CalendarDemo({ initialNow }: { initialNow: string }) {
   const title = action === 'create' ? 'Add an event' : action === 'edit' ? 'Edit event' : action === 'assign' ? roleLabel(draftPriority) : action === 'outcome' ? 'Record what happened' : action === 'cancel' ? 'Cancel this event?' : entry?.title || '';
   const scheduleDays = listView && mode === 'week' ? weekDays(selected) : [selected];
   return <main className={styles.shell}>
+    <nav aria-label="Care sections"><Link href="/care/demo">Meals & daily care →</Link></nav>
     <header className={styles.appHeader}><Link className={styles.wordmark} href="/">Hands<span>In</span><i aria-hidden="true">✳</i></Link><span className={styles.headerDivider} /><span className={styles.pageName}>Calendar</span><div className={styles.headerRight}><span className={styles.demoLabel}>Fictional demo · changes reset on reload</span><span className={styles.avatar} aria-label={`Viewing as ${helperName(actor)}`}>{helperName(actor).split(' ').map(w => w[0]).slice(0, 2).join('')}</span></div></header>
     <div className={styles.workspace}>
       <div className={styles.pageIntro}><div><p className={styles.eyebrow}>Care, together.</p><h1>Your family calendar</h1><p>Appointments, helping hands, and a little peace of mind.</p></div><button className={styles.primary} disabled={!canAdd} onClick={() => add()}>+ Add event</button></div>

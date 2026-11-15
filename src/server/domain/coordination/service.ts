@@ -10,10 +10,11 @@ function text(value: unknown, label: string, max = 2000): asserts value is strin
 function validGrant(g: Grant, actor: string, now: string) {
   return g.actorId === actor && !g.revokedAt && (!g.startsAt || Date.parse(g.startsAt) <= Date.parse(now)) && (!g.expiresAt || Date.parse(g.expiresAt) > Date.parse(now));
 }
-export function authorize(s: CoordinationState, actor: string, recipientId: string, permission: Permission, now: string, taskId?: string) {
+export function authorize(s: CoordinationState, actor: string, recipientId: string, permission: Permission, now: string, taskId?: string, category?: string) {
   const recipient = s.recipients.find(r => r.id === recipientId);
+  const requiredCategory = category || s.tasks.find(t => t.id === taskId)?.category;
   if (!actor) fail('UNAUTHENTICATED', 'Sign in to continue.');
-  if (!recipient || !s.grants.some(g => validGrant(g, actor, now) && g.recipientId === recipientId && g.circleId === recipient.circleId && g.permissions.includes(permission) && (!g.taskIds || (!!taskId && g.taskIds.includes(taskId))))) {
+  if (!recipient || !s.grants.some(g => validGrant(g, actor, now) && g.recipientId === recipientId && g.circleId === recipient.circleId && g.permissions.includes(permission) && (!requiredCategory || !g.categories || g.categories.includes(requiredCategory)) && (!g.taskIds || (!!taskId && g.taskIds.includes(taskId))))) {
     fail('FORBIDDEN', 'Access is unavailable or has expired.');
   }
   return recipient!;
@@ -63,7 +64,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
   text(ctx.idempotencyKey, 'Idempotency key', 200);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('VALIDATION_FAILED', 'Invalid command.');
   const c = raw as CoordinationCommand;
-  const allowed = ['createTask', 'createVisit', 'editVisit', 'cancelVisit', 'requestAssignment', 'respondAssignment', 'cancelAssignment', 'outcome', 'editTask', 'cancelTask'];
+  const allowed = ['createTask', 'createVisit', 'editVisit', 'cancelVisit', 'requestAssignment', 'respondAssignment', 'cancelAssignment', 'outcome', 'careOutcome', 'editTask', 'cancelTask'];
   if (!allowed.includes(c.type)) fail('VALIDATION_FAILED', 'Unknown command.');
   const s = structuredClone(original);
   let recipientId: string;
@@ -81,8 +82,8 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     } else task = taskFor(s, c.taskId);
     recipientId = task.recipientId;
   }
-  const permission = c.type === 'respondAssignment' || c.type === 'outcome' ? 'perform' : 'manage';
-  const recipient = authorize(s, ctx.actorId, recipientId, permission, ctx.now, task?.id);
+  const permission = c.type === 'respondAssignment' || c.type === 'outcome' || c.type === 'careOutcome' ? 'perform' : 'manage';
+  const recipient = authorize(s, ctx.actorId, recipientId, permission, ctx.now, task?.id, c.type === 'createTask' ? c.input.category : ['createVisit', 'editVisit', 'cancelVisit'].includes(c.type) ? 'scheduling' : undefined);
   if (task && task.circleId !== recipient.circleId) fail('FORBIDDEN', 'Task scope mismatch.');
   const fingerprint = JSON.stringify(c);
   const receipt = s.receipts.find(r => r.actorId === ctx.actorId && r.key === ctx.idempotencyKey);
@@ -95,6 +96,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     case 'createTask': {
       const input = c.input;
       text(input.title, 'Task title', 160); text(input.category, 'Task category', 80);
+      if (input.recordingPolicy !== undefined && (input.recordingPolicy !== 'shared_care' || !['meal', 'daily_care'].includes(input.category))) fail('VALIDATION_FAILED', 'Shared recording is limited to meals and daily care.');
       if (input.allDay !== undefined && typeof input.allDay !== 'boolean') fail('VALIDATION_FAILED', 'Invalid all-day setting.');
       validateInterval(input.start, input.end, input.timezone);
       if (input.timezone !== recipient.timezone) fail('VALIDATION_FAILED', 'Use the recipient timezone for care tasks.');
@@ -111,6 +113,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
         const end = days ? addLocalDays(input.end, days, recipient.timezone) : input.end;
         validateInterval(start, end, recipient.timezone);
         const t: Task = { id: ctx.newId(), circleId: recipient.circleId, recipientId, title: input.title.trim(), category: input.category, start, end, timezone: recipient.timezone, allDay: input.allDay, visitId: input.visitId, instructionId: input.instructionId, instructionVersion: instruction ? instruction.version : undefined, seriesId, status: 'open', version: 1 };
+        t.recordingPolicy = input.recordingPolicy;
         s.tasks.push(t); reminder(s, t, ctx); resultId ||= t.id;
       }
       break;
@@ -201,6 +204,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     }
     case 'outcome': {
       const t = task!; current(t, c.expectedVersion); checkInstruction(s, t);
+      if (t.recordingPolicy === 'shared_care') fail('VALIDATION_FAILED', 'Record this outcome in Meals & daily care.');
       if (t.medicationOccurrenceId || t.category === 'medication') fail('VALIDATION_FAILED', 'Record medication outcomes through the medication module.');
       if (closed.has(t.status)) fail('ALREADY_RECORDED', 'Task already closed.');
       if (!s.assignments.some(a => a.taskId === t.id && a.helperId === ctx.actorId && a.status === 'accepted' && assignmentPriority(a) === 0)) fail('FORBIDDEN', 'Accept primary responsibility before recording an outcome.');
@@ -209,6 +213,21 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
       t.status = c.status; t.version++; invalidate(s, t.id);
       if (c.status === 'unable_to_complete') { s.assignments.filter(a => a.taskId === t.id && a.status === 'accepted' && assignmentPriority(a) === 0).forEach(a => { a.status = 'canceled'; a.version++; }); }
       reminder(s, t, ctx); break;
+    }
+    case 'careOutcome': {
+      const t = task!; current(t, c.expectedVersion); checkInstruction(s, t);
+      if (t.recordingPolicy !== 'shared_care' || !['meal', 'daily_care'].includes(t.category) || t.medicationOccurrenceId) fail('FORBIDDEN', 'Shared care recording is unavailable for this task.');
+      if (t.status === 'canceled') fail('VALIDATION_FAILED', 'This occurrence was canceled.');
+      if (!['in_progress', 'completed', 'declined_by_recipient', 'unable_to_complete'].includes(c.status)) fail('VALIDATION_FAILED', 'Invalid outcome.');
+      if (!['self_reported', 'observed', 'reported_by_other'].includes(c.source) || (c.source === 'self_reported') !== (recipient.userId === ctx.actorId)) fail('VALIDATION_FAILED', 'Choose an accurate reporting source.');
+      if (!Number.isFinite(Date.parse(c.observedAt)) || Date.parse(c.observedAt) > Date.parse(ctx.now)) fail('VALIDATION_FAILED', 'Observation time must not be in the future.');
+      text(c.detail, 'Outcome note', 1000);
+      const previous = s.audit.filter(e => e.taskId === t.id && e.action === 'careOutcome').at(-1);
+      if (c.correctsAuditId) {
+        if (!previous || previous.id !== c.correctsAuditId) fail('VERSION_CONFLICT', 'Correct the latest record. Refresh first.');
+        text(c.correctionReason, 'Correction reason', 500);
+      } else if (closed.has(t.status)) fail('ALREADY_RECORDED', 'Already recorded. Use a correction to preserve history.');
+      t.status = c.status; t.version++; invalidate(s, t.id); reminder(s, t, ctx); break;
     }
     case 'editTask': case 'cancelTask': {
       const t = task!; current(t, c.expectedVersion);
@@ -257,7 +276,7 @@ export function applyCommand(original: CoordinationState, raw: unknown, ctx: Mut
     for (const target of recipients) event(s, t, ctx, 'task_changed', target);
   }
   for (const changed of s.tasks.filter(t => original.tasks.find(old => old.id === t.id)?.version !== t.version)) {
-    s.audit.push({ id: ctx.newId(), taskId: changed.id, actorId: ctx.actorId, at: ctx.now, action: c.type, instructionVersion: changed.instructionVersion, detail: c.type === 'outcome' ? c.detail : c.type });
+    s.audit.push({ id: ctx.newId(), taskId: changed.id, actorId: ctx.actorId, at: ctx.now, action: c.type, instructionVersion: changed.instructionVersion, detail: c.type === 'outcome' || c.type === 'careOutcome' ? c.detail + (c.type === 'careOutcome' && c.correctsAuditId ? ` Correction: ${c.correctionReason}` : '') : c.type, ...(c.type === 'careOutcome' ? { source: c.source, observedAt: c.observedAt, supersedesId: c.correctsAuditId } : {}) });
   }
   for (const changed of s.visits.filter(v => original.visits.find(old => old.id === v.id)?.version !== v.version)) {
     s.audit.push({ id: ctx.newId(), visitId: changed.id, actorId: ctx.actorId, at: ctx.now, action: c.type, detail: c.type });
@@ -276,7 +295,7 @@ export function projectView(s: CoordinationState, actorId: string, now: string):
   const assignments = s.assignments.filter(a => taskIds.has(a.taskId));
   const helpers = s.helpers.filter(h => h.id === actorId || recipients.some(r => readable(r.id) && s.grants.some(g => validGrant(g, h.id, now) && g.recipientId === r.id && !g.taskIds)));
   return structuredClone({ recipients, helpers: helpers.map(h => ({ ...h, unavailable: h.id === actorId ? h.unavailable : [] })), tasks,
-    visits: s.visits.filter(v => s.recipients.some(r => r.id === v.recipientId && r.circleId === v.circleId) && readable(v.recipientId)), assignments,
+    visits: s.visits.filter(v => { try { const r = authorize(s, actorId, v.recipientId, 'read', now, undefined, 'scheduling'); return r.circleId === v.circleId; } catch { return false; } }), assignments,
     instructions: s.instructions.filter(i => tasks.some(t => t.instructionId === i.id)), audit: s.audit.filter(e => e.taskId && taskIds.has(e.taskId)) });
 }
 export function coverage(s: Pick<CoordinationState, 'assignments'>, t: Task) {
@@ -286,6 +305,11 @@ export function coverage(s: Pick<CoordinationState, 'assignments'>, t: Task) {
 export function shouldDispatch(s: CoordinationState, eventId: string, now: string) {
   const e = s.outbox.find(e => e.id === eventId);
   if (!e || e.status !== 'pending' || Date.parse(e.dueAt) > Date.parse(now)) return false;
+  if (e.kind === 'care_concern') {
+    const observation = s.observations?.find(o => o.id === e.observationId && o.recipientId === e.recipientId);
+    if (!observation || observation.status === 'resolved' || observation.version !== e.taskVersion) return false;
+    try { const r = authorize(s, e.targetId, observation.recipientId, 'manage', now, undefined, 'daily_care'); return r.circleId === observation.circleId; } catch { return false; }
+  }
   const t = s.tasks.find(t => t.id === e.taskId);
   if (!t || t.version !== e.taskVersion || !s.recipients.some(r => r.id === t.recipientId && r.circleId === t.circleId)) return false;
   try { authorize(s, e.targetId, t.recipientId, 'read', now, t.id); } catch { return false; }

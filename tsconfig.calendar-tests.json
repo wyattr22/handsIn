@@ -14,7 +14,10 @@
     "src/contracts/coordination.ts",
     "src/server/domain/coordination/**/*.ts",
     "src/features/coordination/demo/fixtures.ts",
-    "src/features/coordination/calendarMath.ts"
+    "src/features/coordination/calendarMath.ts",
+    "src/contracts/care.ts",
+    "src/server/domain/care/**/*.ts",
+    "src/features/care/demo.ts"
   ],
   "exclude": ["node_modules", ".calendar-test-build"]
 }
