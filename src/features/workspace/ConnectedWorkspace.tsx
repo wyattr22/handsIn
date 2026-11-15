@@ -1,4 +1,5 @@
 'use client';
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import DeviceAccess from './DeviceAccess';
@@ -94,7 +95,7 @@ export default function ConnectedWorkspace({initialSection='home',initialRecipie
  const nextVisit=activeRows.filter(r=>r.kind==='visit').sort((a,b)=>(a.starts_at||'').localeCompare(b.starts_at||''))[0];
  const canViewSection=(id:Section)=>id==='health'?allowed('health'):id==='medications'?allowed('medications'):id==='care'?allowed('care')||allowed('meals')||allowed('tasks'):true;
  const canAdd=admin&&(section==='home'||section==='calendar'||section==='coverage'?allowed('tasks'):section==='medications'?allowed('medications'):section==='health'?allowed('health'):allowed('meals')||allowed('care')||allowed('tasks'));
- return <div className={styles.workspace}><header className={styles.header}><Link href="/workspace" className={styles.brand}>HandsIn</Link><nav aria-label="Workspace"><button onClick={()=>navigate('home')} aria-current={section==='home'?'page':undefined}>Home</button><button onClick={()=>navigate('calendar')} aria-current={section==='calendar'?'page':undefined}>Calendar</button><button onClick={()=>navigate('care')}>Daily care</button><Link href={"/people/connected?recipient="+selected}>Care circle</Link></nav><button disabled={busy} onClick={()=>run(async()=>{if(family)await lockVault(family.actorId);await json('/api/auth',{type:'signOut'});location.assign('/auth');})}>Sign out</button></header>
+ return <div className={styles.workspace}><header className={styles.header}><Link href="/workspace" className={styles.brand}><BrandLogo /></Link><nav aria-label="Workspace"><button onClick={()=>navigate('home')} aria-current={section==='home'?'page':undefined}>Home</button><button onClick={()=>navigate('calendar')} aria-current={section==='calendar'?'page':undefined}>Calendar</button><button onClick={()=>navigate('care')}>Daily care</button><Link href={"/people/connected?recipient="+selected}>Care circle</Link></nav><button disabled={busy} onClick={()=>run(async()=>{if(family)await lockVault(family.actorId);await json('/api/auth',{type:'signOut'});location.assign('/auth');})}>Sign out</button></header>
  <main className={styles.main}><p className={styles.caption}>LOCAL TRIAL · FICTIONAL INFORMATION ONLY</p>{family&&<p className={styles.muted}>Signed in as {family.profile.name}</p>}
  {error?<section role="alert" className={styles.card}><h1>Let’s reconnect your care circle</h1><p>{error}</p><Link href="/auth">Sign in</Link> · <button onClick={()=>navigate('account')}>Restore device keys</button> · <button onClick={()=>void refresh()}>Try again</button></section>:<>
  <h1>{section==='home'?'Who are we caring for today?':section==='account'?'Your devices':sections.find(s=>s.id===section)?.label}</h1>

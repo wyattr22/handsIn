@@ -1,4 +1,5 @@
 "use client";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -50,7 +51,7 @@ export function AppShell({
   const recipientStyle = { "--recipient-color": recipientColor } as CSSProperties;
   return <div className={`handsin-app${wide ? ' handsin-app-wide' : ''}`}>
     <header className="handsin-app-header">
-      <Link className="handsin-app-wordmark" href={homeHref} aria-label="HandsIn home">Hands<span>In</span></Link>
+      <Link className="handsin-app-wordmark" href={homeHref} aria-label="HandsIn home"><BrandLogo /></Link>
       <Link className="handsin-app-profile" href={profileHref} aria-label={profileHref.startsWith('/#') ? 'Open care profiles' : 'Open people and access'}>{userInitials}</Link>
     </header>
     <div className="handsin-recipient-bar" aria-label="Current care recipient">

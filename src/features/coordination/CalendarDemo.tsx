@@ -1,4 +1,5 @@
 'use client';
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -128,7 +129,7 @@ export default function CalendarDemo({ embedded = false }: { embedded?: boolean 
   const title = action === 'create' ? 'Add an event' : action === 'edit' ? 'Edit event' : action === 'assign' ? roleLabel(draftPriority) : action === 'outcome' ? 'Record what happened' : action === 'cancel' ? 'Cancel this event?' : entry?.title || '';
   const scheduleDays = listView && mode === 'week' ? weekDays(selected) : [selected];
   return <main className={styles.shell}>
-    {!embedded && <header className={styles.appHeader}><Link className={styles.wordmark} href="/">Hands<span>In</span><i aria-hidden="true">✳</i></Link><span className={styles.headerDivider} /><span className={styles.pageName}>Calendar</span><Link href="/coverage/demo">Coverage & handoffs →</Link><div className={styles.headerRight}><span className={styles.demoLabel}>Fictional demo · changes reset on reload</span><span className={styles.avatar} aria-label={`Viewing as ${helperName(actor)}`}>{helperName(actor).split(' ').map(w => w[0]).slice(0, 2).join('')}</span></div></header>}
+    {!embedded && <header className={styles.appHeader}><Link className={styles.wordmark} href="/"><BrandLogo /></Link><span className={styles.headerDivider} /><span className={styles.pageName}>Calendar</span><Link href="/coverage/demo">Coverage & handoffs →</Link><div className={styles.headerRight}><span className={styles.demoLabel}>Fictional demo · changes reset on reload</span><span className={styles.avatar} aria-label={`Viewing as ${helperName(actor)}`}>{helperName(actor).split(' ').map(w => w[0]).slice(0, 2).join('')}</span></div></header>}
     <div className={styles.workspace}>
       <div className={styles.pageIntro}><div><p className={styles.eyebrow}>Care, together.</p><h1>Your family calendar</h1><p>Appointments, helping hands, and a little peace of mind.</p></div><button className={styles.primary} disabled={!canAdd} onClick={() => add()}>+ Add event</button></div>
       <div className={styles.calendarToolbar}><div className={styles.dateNavigation}><button type="button" onClick={() => setSelected(today)}>Today</button><button type="button" aria-label={`Previous ${mode}`} onClick={() => setSelected(movePeriod(selected, mode, -1))}>‹</button><button type="button" aria-label={`Next ${mode}`} onClick={() => setSelected(movePeriod(selected, mode, 1))}>›</button><h2 aria-live="polite">{calendarTitle(selected, mode)}</h2></div><div className={styles.viewSwitcher} role="group" aria-label="Calendar view">{(['day', 'week', 'month', 'year'] as CalendarMode[]).map(m => <button key={m} type="button" aria-pressed={mode === m} onClick={() => { setMode(m); setListView(false); }}>{m[0].toUpperCase() + m.slice(1)}</button>)}</div></div>

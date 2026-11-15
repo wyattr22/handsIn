@@ -1,4 +1,5 @@
 "use client";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -13,7 +14,7 @@ export function FlowShell({ children }: { children: React.ReactNode }) {
   return <main className="medication-flow">
     <header className="flow-header">
       <Link href={current > 0 ? `/demo/medications/new/${steps[current - 1]}` : "/medications/demo"} className="back-link" aria-label="Go back">←</Link>
-      <Link className="flow-wordmark" href="/demo">Hands<span>In</span></Link>
+      <Link className="flow-wordmark" href="/demo"><BrandLogo /></Link>
       <Link href="/medications/demo" className="exit-link">Keep draft & exit</Link>
     </header>
     <div className="flow-progress" aria-label={`Step ${current + 1} of ${steps.length}`}>

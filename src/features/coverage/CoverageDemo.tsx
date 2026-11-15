@@ -1,4 +1,5 @@
 'use client';
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -91,7 +92,7 @@ export default function CoverageDemo({ embedded = false }: { embedded?: boolean 
   const act: Action = command => run({ coverageId: selected, expectedVersion: c.version, operationId: crypto.randomUUID(), command });
   function moveClock(value: string) { clearFeedback(); setNow(value); }
   return <main className={styles.shell}>
-    {!embedded && <header className={styles.nav}><Link href="/" className={styles.wordmark}>Hands<span>In</span></Link><Link href="/calendar/demo">Calendar & arrivals →</Link><Link href="/coverage">About this preview ↗</Link></header>}
+    {!embedded && <header className={styles.nav}><Link href="/" className={styles.wordmark}><BrandLogo /></Link><Link href="/calendar/demo">Calendar & arrivals →</Link><Link href="/coverage">About this preview ↗</Link></header>}
     <div className={styles.demoBar}><strong>FICTIONAL DEMO</strong><span>No real invitations, authentication or shared storage. Refresh resets everything.</span></div>
     <div className={styles.heading}><div><p className={styles.eyebrow}>CARE, EVEN WHEN PLANS CHANGE</p><h1>Someone to step in.</h1><p>A thoughtful handoff for the people you trust.</p></div><span className={styles.flower} aria-hidden="true">✳</span></div>
     <div className={styles.controls}><label>View as<select value={actor} onChange={e => { clearFeedback(); setActor(e.target.value); }}>{DEMO_HELPERS.map(h => <option key={h.id} value={h.id}>{h.name}{h.id === 'sarah' ? ' · coordinator' : h.id === 'ben' ? ' · replacement helper' : ''}</option>)}</select></label><label>Demo scenario<select value={selected} onChange={e => { clearFeedback(); setSelected(e.target.value); }}><option value="alex">Alex's visit</option><option value="june">June's visit</option></select></label></div>
