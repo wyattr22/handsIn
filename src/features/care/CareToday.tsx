@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { CareCommand, FoodGuidance, Meal } from '../../contracts/care';
 import type { CareSource, Task } from '../../contracts/coordination';
 import { applyCare, canCare, effectiveLog, mealsEaten, projectCare } from '../../server/domain/care/service';
@@ -18,7 +19,8 @@ import { ProfileForm, RoutineForm } from './PlanForms';
 import { MealPlanner, RecordForm, SourceField } from './TodayForms';
 import baseStyles from './care.module.css';
 import todayStyles from './today.module.css';
-const styles = { ...baseStyles, ...todayStyles };
+import themeStyles from './patient-theme.module.css';
+const styles = { ...baseStyles, ...todayStyles, ...themeStyles };
 
 const statusName = (status: string) => ({ open: 'To do', completed: 'Done', skipped: 'Skipped', declined_by_recipient: 'Skipped', unable_to_complete: 'Needs help', in_progress: 'In progress', canceled: 'Canceled' }[status] || status);
 const sourceName = (source: string) => ({ self_reported: 'Self-reported', observed: 'Personally observed', reported_by_other: 'Reported by someone else' }[source] || source);
@@ -42,6 +44,7 @@ export default function CareToday() {
   }, []);
   const view = projectCare(w, actor, now), recipient = view.coordination.recipients.find(r => r.id === recipientId);
   const id = recipient?.id || '', zone = recipient?.timezone || 'America/Los_Angeles', today = parts(now, zone).slice(0, 10);
+  const recipientTheme = DEMO_RECIPIENTS.find(person => person.id === id) || DEMO_RECIPIENTS[0];
   const manager = canCare(w, actor, id, 'manage', now), profile = view.profiles.find(p => p.recipientId === id);
   const tasks = view.coordination.tasks.filter(t => t.recipientId === id && t.recordingPolicy === 'shared_care' && t.status !== 'canceled' && parts(t.start, zone).startsWith(day)).sort((a, b) => a.start.localeCompare(b.start));
   const meals = tasks.filter(t => t.category === 'meal'), observations = view.coordination.observations?.filter(o => o.recipientId === id) || [];
@@ -61,7 +64,7 @@ export default function CareToday() {
   }
   function recordButton(t: Task) {
     const closed = ['completed', 'skipped', 'declined_by_recipient'].includes(t.status);
-    return canRecord(t) && <button className={closed ? '' : styles.primary} onClick={() => open({ type: 'record', id: t.id, correction: closed })}>{closed ? 'Correct record' : t.category === 'meal' ? 'Record meal' : 'Done'}</button>;
+    return canRecord(t) && <button className={closed ? '' : `${styles.primary} ${styles.patientPrimary}`} onClick={() => open({ type: 'record', id: t.id, correction: closed })}>{closed ? 'Correct record' : t.category === 'meal' ? 'Record meal' : 'Done'}</button>;
   }
   function history(t: Task) {
     const log = effectiveLog(view, t.id), accepted = view.coordination.assignments.filter(a => a.taskId === t.id && a.status === 'accepted');
@@ -78,7 +81,7 @@ export default function CareToday() {
     const check = checkMeal(view, m), recipe = recipes.find(r => r.id === m.recipeId), linked = linkedDoses(view, m);
     const unresolved = check.review.find(s => /not been confirmed|not confirmed|not.*match|unavailable|unknown|need.*review|conflict|unconfirmed|missing|changed|requires verified/i.test(s) && !s.includes('interaction checking'));
     const needs = check.blocked.length ? 'Food conflict: review this meal before serving.' : unresolved ? `Needs confirmation: ${unresolved}` : check.review.some(s => !s.includes('interaction checking')) && m.reviewedFingerprint !== check.fingerprint ? 'Needs confirmation: check the food details.' : '';
-    return <article className={styles.simpleMeal} key={t.id} id={`task-${t.id}`}>
+    return <article className={`${styles.simpleMeal} ${styles.patientCard}`} key={t.id} id={`task-${t.id}`}>
       <div className={styles.row}><p className={styles.mealTime}>{time(t.start)} <span>{t.title}</span></p><span className={t.status === 'completed' ? styles.done : styles.badge}>{statusName(t.status)}</span></div>
       {linked.length ? linked.map((d, i) => { const g = view.guidance.find(g => g.id === d?.guidanceId); return <div className={styles.doseLine} key={d?.id || i}><p><strong>{g?.product || 'Medication needs confirmation'}</strong>{d && ` at ${time(d.at)}`}</p><p><span className={styles.requiredLabel}>{!d || doseIssues(view, d).length ? 'Needs confirmation' : 'Required'}</span> {g ? foodInstruction(g) : 'Confirm the medication instructions.'}</p></div>; }) : <p className={styles.small}>Meal suggestion only - no medication dose is linked.</p>}
       <div className={styles.suggestion}><span>Meal suggestion</span><h3>{check.blocked.length ? 'Choose another meal' : recipe?.title || m.name}</h3><p>{check.blocked.length ? 'The previous suggestion conflicts with the recorded instructions.' : `${recipe ? `${recipe.minutes} minutes` : 'Custom meal'}${m.drinks?.length ? ` - Serve with ${m.drinks.map(id => ingredients.find(i => i.id === id)?.name || id).join(', ').toLowerCase()}` : ''}`}</p></div>
@@ -95,22 +98,22 @@ export default function CareToday() {
     </article>;
   }
   function reminder(t: Task) {
-    return <article className={styles.reminder} key={t.id} id={`reminder-${t.id}`}><div className={styles.reminderTop}><div><p className={styles.small}>{time(t.start)}</p><h3>{t.category === 'meal' ? `${t.title} - eat a meal` : t.title}</h3><p className={styles.small}>{statusName(t.status)}</p></div>{recordButton(t)}</div><details className={styles.details}><summary>Details</summary>{view.coordination.instructions.filter(i => i.id === t.instructionId).map(i => <p key={i.id}>{i.text}</p>)}{history(t)}</details></article>;
+    return <article className={`${styles.reminder} ${styles.patientCard}`} key={t.id} id={`reminder-${t.id}`}><div className={styles.reminderTop}><div><p className={styles.small}>{time(t.start)}</p><h3>{t.category === 'meal' ? `${t.title} - eat a meal` : t.title}</h3><p className={styles.small}>{statusName(t.status)}</p></div>{recordButton(t)}</div><details className={styles.details}><summary>Details</summary>{view.coordination.instructions.filter(i => i.id === t.instructionId).map(i => <p key={i.id}>{i.text}</p>)}{history(t)}</details></article>;
   }
   const dayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
-  return <main className={`${styles.shell} ${styles.page}`}>
+  return <main className={`${styles.shell} ${styles.page}`} style={{ '--patient-color': recipientTheme.color, '--patient-tint': recipientTheme.tint } as CSSProperties}>
     <p className={styles.demo}>Fictional demo. Changes reset on reload. No real alerts are sent.</p>
     <div className={styles.heading}><div><h1>Meals & daily care<span>.</span></h1><p className={styles.subtitle}>What to eat. When to eat. A little care each day.</p></div></div>
-    <section className={styles.toolbar} aria-label="Person and day"><label>Care for<select value={id} disabled={!recipient} onChange={e => { setRecipientId(e.target.value); setError(''); }}>{view.coordination.recipients.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}{!recipient && <option>No accessible profiles</option>}</select></label><div className={styles.dateNav}><button aria-label="Previous day" onClick={() => setDay(shiftDay(day, -1))}>&lsaquo;</button><label>Date<input type="date" value={day} onChange={e => { if (e.target.value) setDay(e.target.value); }} /></label><button aria-label="Next day" onClick={() => setDay(shiftDay(day, 1))}>&rsaquo;</button><button onClick={() => setDay(today)}>Today</button></div></section>
+    <section className={`${styles.toolbar} ${styles.patientToolbar}`} aria-label="Person and day"><label>Care for<select value={id} disabled={!recipient} onChange={e => { setRecipientId(e.target.value); setError(''); }}>{view.coordination.recipients.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}{!recipient && <option>No accessible profiles</option>}</select></label><div className={styles.dateNav}><button aria-label="Previous day" onClick={() => setDay(shiftDay(day, -1))}>&lsaquo;</button><label>Date<input type="date" value={day} onChange={e => { if (e.target.value) setDay(e.target.value); }} /></label><button aria-label="Next day" onClick={() => setDay(shiftDay(day, 1))}>&rsaquo;</button><button onClick={() => setDay(today)}>Today</button></div></section>
     {message && <p role="status" className={styles.success}>{message}</p>}{error && !modal && <p role="alert" className={styles.warning}>{error}</p>}
     {!recipient ? <section className={styles.empty}><h2>No access to a care profile</h2><p>This account has no shared meals and daily-care access.</p></section> : <>
       <div className={styles.todayHeading}><h2>{day === today ? 'Today' : dayLabel}</h2><p>{day === today ? dayLabel : ''} <span className={styles.small}>{zone.replaceAll('_', ' ')}</span></p></div>
-      <div className={styles.tabs} role="tablist" aria-label="Daily support" onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'meals' : e.key === 'End' ? 'care' : tab === 'meals' ? 'care' : 'meals'; setTab(next); document.getElementById(`tab-${next}`)?.focus(); } }}><button id="tab-meals" role="tab" aria-controls="care-panel" tabIndex={tab === 'meals' ? 0 : -1} aria-selected={tab === 'meals'} onClick={() => setTab('meals')}>Meals</button><button id="tab-care" role="tab" aria-controls="care-panel" tabIndex={tab === 'care' ? 0 : -1} aria-selected={tab === 'care'} onClick={() => setTab('care')}>Daily care</button></div>
+      <div className={`${styles.tabs} ${styles.patientTabs}`} role="tablist" aria-label="Daily support" onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'meals' : e.key === 'End' ? 'care' : tab === 'meals' ? 'care' : 'meals'; setTab(next); document.getElementById(`tab-${next}`)?.focus(); } }}><button id="tab-meals" role="tab" aria-controls="care-panel" tabIndex={tab === 'meals' ? 0 : -1} aria-selected={tab === 'meals'} onClick={() => setTab('meals')}>Meals</button><button id="tab-care" role="tab" aria-controls="care-panel" tabIndex={tab === 'care' ? 0 : -1} aria-selected={tab === 'care'} onClick={() => setTab('care')}>Daily care</button></div>
       <section id="care-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         <div className={styles.sectionHeading}><p>{tab === 'meals' ? 'Simple meals for your medication times.' : 'A few reminders for the day.'}</p>{manager && <button onClick={() => open({ type: tab === 'meals' ? 'plan' : 'routine' })}>+ {tab === 'meals' ? 'Plan a meal' : 'Add reminder'}</button>}</div>
         {tab === 'meals' ? meals.map(mealCard) : tasks.map(reminder)}
         {!(tab === 'meals' ? meals : tasks).length && <p className={styles.empty}>Nothing planned for this day.</p>}
-        {tab === 'meals' && doses.filter(d => !view.meals.some(m => m.medicationOccurrenceIds?.includes(d.id) && view.coordination.tasks.some(t => t.id === m.taskId && t.status !== 'canceled'))).map(d => { const g = view.guidance.find(g => g.id === d.guidanceId); return <article className={styles.reminder} key={d.id}><strong>{g?.product} - {time(d.at)}</strong><p>{g && foodInstruction(g)}</p>{manager && g && !doseIssues(view, d).length && g.rule !== 'empty_stomach' && g.rule !== 'separate' ? <button onClick={() => open({ type: 'plan', doseId: d.id })}>Review a meal for this dose</button> : <p>Needs confirmation: ask the pharmacist or prescriber about food timing.</p>}</article>; })}
+        {tab === 'meals' && doses.filter(d => !view.meals.some(m => m.medicationOccurrenceIds?.includes(d.id) && view.coordination.tasks.some(t => t.id === m.taskId && t.status !== 'canceled'))).map(d => { const g = view.guidance.find(g => g.id === d.guidanceId); return <article className={`${styles.reminder} ${styles.patientCard}`} key={d.id}><strong>{g?.product} - {time(d.at)}</strong><p>{g && foodInstruction(g)}</p>{manager && g && !doseIssues(view, d).length && g.rule !== 'empty_stomach' && g.rule !== 'separate' ? <button onClick={() => open({ type: 'plan', doseId: d.id })}>Review a meal for this dose</button> : <p>Needs confirmation: ask the pharmacist or prescriber about food timing.</p>}</article>; })}
       </section>
       {tab === 'meals' ? <>
         <details className={styles.panel}><summary>Medication food instructions</summary>{view.guidance.filter(g => g.recipientId === id).map(g => <GuidanceSource key={g.id} guidance={g} />)}</details>
@@ -142,5 +145,3 @@ function RecipeDetails({ meal }: { meal: Meal }) {
   const substituted = Object.values(meal.substitutions).length > 0;
   return <><h3>{r.title}</h3><p>{r.minutes} minutes - {meal.servings} planned serving{meal.servings === 1 ? '' : 's'}</p><h3>What you need</h3><ul>{r.ingredients.map(i => <li key={i.ingredientId}>{Number((i.amount * meal.servings / r.servings).toFixed(2))} {i.unit} {ingredients.find(x => x.id === (meal.substitutions[i.ingredientId] || i.ingredientId))?.name}</li>)}{meal.drinks?.map(id => <li key={id}>Serve with {ingredients.find(i => i.id === id)?.name}. Follow any fluid restrictions.</li>)}</ul><h3>What to do</h3><ol>{r.steps.map(s => <li key={s}>{s}</li>)}</ol>{substituted && <p className={styles.warning}>Ingredients were substituted. The original steps may need adjustment; confirm preparation and texture before using.</p>}<p>Meal suggestion, not a prescribed portion. Check allergies, package labels and individual texture instructions.</p></>;
 }
-
-

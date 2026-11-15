@@ -1,0 +1,28 @@
+.patientToolbar {
+  background: var(--patient-tint);
+  border: 2px solid var(--patient-color);
+  box-shadow: inset 6px 0 0 var(--patient-color);
+}
+
+.patientToolbar > label:first-child {
+  color: var(--patient-color);
+}
+
+.patientToolbar :is(select, input, button) {
+  border-color: color-mix(in srgb, var(--patient-color) 58%, white);
+}
+
+.patientCard {
+  border-color: color-mix(in srgb, var(--patient-color) 32%, #dce3db);
+  border-left: 5px solid var(--patient-color);
+}
+
+.patientPrimary {
+  background: var(--patient-color);
+  border-color: var(--patient-color);
+}
+
+.patientTabs button[aria-selected='true'] {
+  border-color: var(--patient-color);
+  color: var(--patient-color);
+}

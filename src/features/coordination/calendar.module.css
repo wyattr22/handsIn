@@ -28,6 +28,7 @@
 .contextBar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:0 0 18px;position:relative}
 .recipientSelect{display:flex;gap:10px;align-items:center;font-size:15px;color:#52665c}
 .recipientSelect select{padding:10px 30px 10px 12px;background:#fff;border:1px solid #d0d9d1;border-radius:8px;min-height:48px;font-size:16px;max-width:280px}
+.patientKey{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.shell .patientKey button{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:7px 11px;border-radius:999px;font-size:13px;background:var(--patient-tint,#fff);border:1px solid color-mix(in srgb,var(--patient-color,#ccd4cf) 45%,#ccd4cf)}.shell .patientKey button[aria-pressed=true]{box-shadow:inset 0 0 0 2px var(--patient-color);font-weight:700}.patientKey button>span{width:11px;height:11px;border-radius:50%;background:var(--patient-color);flex-shrink:0}.shell .patientKey .showEveryone{background:#fff;border-style:dashed;color:#40584d}
 .timezone{font-size:13px;color:#52665c;margin-left:auto}.filterMenu summary,.demoTools summary{cursor:pointer;min-height:48px;padding:12px 6px;font-size:15px;list-style-position:inside}
 .filterFields{position:absolute;right:0;top:52px;z-index:15;width:min(350px,100%);background:#fff;border:1px solid #d4ddd4;border-radius:12px;padding:20px;display:grid;gap:16px;box-shadow:0 8px 25px #14302e12}
 .shell .textButton{border-color:transparent;background:transparent;color:#285944;padding:10px 4px;font-size:16px;text-align:left}
@@ -54,7 +55,7 @@
 .scheduleHeading h2{font:500 24px 'Fraunces',Georgia,serif;letter-spacing:-.4px;margin:0}
 .shell .scheduleItem{width:100%;background:transparent;display:flex;align-items:center;text-align:left;gap:16px;padding:17px 0;border:0;border-top:1px solid #e6eae4;border-radius:0;min-height:84px}
 .shell .scheduleItem:hover{background:#f8faf6}.eventMarker{width:5px;height:42px;border-radius:4px;background:var(--event-line);flex-shrink:0}
-.scheduleTime{min-width:170px;font-size:15px;max-width:230px}.scheduleName{flex:1;min-width:0}.scheduleName strong{font-size:18px;font-weight:500;display:block}.scheduleName small{display:block;font-size:14px;color:#586c60;margin-top:3px}
+.scheduleTime{min-width:170px;font-size:15px;max-width:230px}.scheduleName{flex:1;min-width:0}.scheduleName strong{font-size:18px;font-weight:500;display:block}.scheduleName small{display:block;font-size:14px;color:#586c60;margin-top:3px}.patientDot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--event-line);margin-right:7px}.scheduleItem{--event-line:#5d8a66}.scheduleItem:hover{box-shadow:inset 4px 0 0 var(--event-line)}
 .coverageBadge{display:inline-block;font-size:12px;line-height:1.5;font-weight:600;padding:5px 10px;border-radius:20px;background:#f6eadc;color:#775331;white-space:normal}
 .covered{background:#e6efe6;color:#345d3a}
 .empty{padding:24px 0;color:#5b6c60;font-size:17px;line-height:1.7}
@@ -71,6 +72,7 @@
 .shell .dayHeading{border:0;border-left:1px solid #e2e7df;border-radius:0;background:#fff;display:grid;justify-items:center;gap:1px;padding:10px}.dayHeading span{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:#607666}.dayHeading strong{font-size:26px;font-weight:500;width:42px;height:42px;display:grid;place-items:center}.currentDayHeading strong{border-radius:50%;background:#245340;color:#fff}
 .allDayGrid{display:grid;min-height:52px;border-bottom:1px solid #dce3d8}.allDayGrid>span{font-size:11px;padding:14px 6px;color:#5b7161}.allDayGrid>div{border-left:1px solid #e2e7df;padding:3px;display:grid;gap:3px;align-content:start}
 .shell .allDayEvent{background:var(--event-bg);color:var(--event-ink);border:0;border-left:3px solid var(--event-line);border-radius:4px;padding:8px;font-size:14px;text-align:left}
+.allDayEvent span{display:block;font-size:11px;margin-top:3px;opacity:.85}
 .timeScroll{height:620px;overflow-y:auto;overscroll-behavior:contain}.timeBody{display:grid;height:1632px}
 .hourLabels{font-size:11px;color:#62776a}.hourLabels>div{height:66px;text-align:right;padding:4px 10px 0 0}
 .timeColumn{position:relative;border-left:1px solid #e0e7dc}
@@ -97,3 +99,4 @@
 @media(prefers-reduced-motion:reduce){.shell button{transition:none}}
 
 .tileAttendance{display:block;white-space:normal;font-size:10px;line-height:1.3;overflow:hidden;max-height:2.6em}.coverageBadge{white-space:normal;max-width:320px}.appHeader>a:not(:first-child){font-size:13px;margin-left:16px}@media(max-width:650px){.coverageBadge{max-width:100%}.appHeader{flex-wrap:wrap;gap:8px}.scheduleItem{overflow-wrap:anywhere}}
+@media(max-width:650px){.recipientSelect{width:100%}.recipientSelect select{max-width:none;flex:1}.patientKey{width:100%}}

@@ -23,11 +23,13 @@ export function AppShell({
   recipientInitials = "D",
   recipientPhoto = "",
   recipientColor = "#2f766d",
+  recipientContextLabel = "Care plan for",
   userInitials = "WR",
   links = navigation,
   homeHref = "/",
   profileHref = "/people",
   onSwitchRecipient,
+  showRecipientSwitch = true,
   wide = false,
 }: {
   children: React.ReactNode;
@@ -35,11 +37,13 @@ export function AppShell({
   recipientInitials?: string;
   recipientPhoto?: string;
   recipientColor?: string;
+  recipientContextLabel?: string;
   userInitials?: string;
   links?: { href: string; label: string; icon: string }[];
   homeHref?: string;
   profileHref?: string;
   onSwitchRecipient?: () => void;
+  showRecipientSwitch?: boolean;
   wide?: boolean;
 }) {
   const pathname = usePathname();
@@ -51,8 +55,8 @@ export function AppShell({
     </header>
     <div className="handsin-recipient-bar" aria-label="Current care recipient">
       <span className="handsin-recipient-avatar selected" style={recipientStyle}>{recipientPhoto ? <Image src={recipientPhoto} alt="" width={40} height={40} unoptimized /> : recipientInitials}</span>
-      <span><small>Care plan for</small><strong>{recipientName}</strong></span>
-      {onSwitchRecipient ? <button type="button" onClick={onSwitchRecipient}>Switch recipient</button> : <Link href="/people">Switch</Link>}
+      <span><small>{recipientContextLabel}</small><strong>{recipientName}</strong></span>
+      {showRecipientSwitch ? onSwitchRecipient ? <button type="button" onClick={onSwitchRecipient}>Switch recipient</button> : <Link href="/people">Switch</Link> : null}
     </div>
     <div className="handsin-app-content">{children}</div>
     <nav className="handsin-app-nav" aria-label="Primary navigation">
