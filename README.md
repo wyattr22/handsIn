@@ -40,3 +40,7 @@ HandsIn is deployed on Vercel at [handsin-six.vercel.app](https://handsin-six.ve
 The Vercel project is connected to this GitHub repository. Pushes to `main` update the production deployment, while pull requests and other branches can receive their own preview deployments.
 
 This initial version is a branded starting page. Care circles, medication tracking, AI calls, and other planned features have not been implemented yet. Add service credentials through Vercel environment variables as those integrations are built; never commit credentials.
+
+## People and Roles integration
+
+The new People design preview is at `/people/preview`. The tested local account/family flow and hosted rollout gate are documented in [the People integration handoff](docs/PEOPLE_INTEGRATION_HANDOFF.md). Existing hosted login and feature modules remain active until the recipient-scoped encrypted foundation is reconciled with the shared schema. No local migration proposal should be applied to the hosted database without that review.

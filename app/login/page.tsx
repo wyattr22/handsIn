@@ -1,9 +1,11 @@
+import { peopleFoundationReady } from "@/src/lib/supabase/foundation";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LoginForm } from "./LoginForm";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function LoginPage() {
+  if (peopleFoundationReady()) redirect("/auth");
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (user) redirect("/medications");

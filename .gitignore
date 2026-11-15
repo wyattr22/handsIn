@@ -6,3 +6,7 @@ out/
 !.env.example
 *.tsbuildinfo
 .calendar-test-build/
+.people-test-output/
+supabase/.temp/
+supabase/.branches/
+.local-services/
