@@ -5,3 +5,6 @@ out/
 .env*
 !.env.example
 *.tsbuildinfo
+.people-test-output/
+supabase/.temp/
+supabase/.branches/
