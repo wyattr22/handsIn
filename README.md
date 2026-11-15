@@ -2,6 +2,10 @@
 
 We're in this together :)
 
+## Shared pitch preparation
+
+Teammates and their AIs: start with the [HandsIn pitch workspace](docs/pitch/README.md) for verified competition rules, source PDFs, product evidence, proposed narrative, demo/rehearsal guidance, and open decisions. This is a collaborative preparation packet, not a finalized pitch or a claim that all planned features are complete.
+
 A shared care hub for families. Read [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for the full hackathon brief, scope, and judging rubric.
 
 **Live app:** [handsin-six.vercel.app](https://handsin-six.vercel.app)
