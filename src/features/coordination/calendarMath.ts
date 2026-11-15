@@ -5,6 +5,7 @@ export interface CalendarEntry {
   id: string; title: string; recipientId: string; kind: 'appointment' | 'followup' | 'visit' | 'task';
   start: string; end: string; timezone: string; allDay?: boolean; taskId?: string; visitId?: string;
   canceled: boolean;
+  category?: string;
 }
 export const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export function civilDate(day: string): Date {

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test:calendar": "node scripts/test-calendar.cjs"
+    "test:calendar": "node scripts/test-calendar.cjs",
+    "test:care": "node scripts/test-calendar.cjs"
   },
   "dependencies": {
     "next": "16.4.6",

@@ -3,7 +3,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 for (const args of [
   [require.resolve('typescript/bin/tsc'), '--project', 'tsconfig.calendar-tests.json'],
-  ['--test', 'tests/coordination.test.cjs'],
+  ['--test', 'tests/coordination.test.cjs', 'tests/care.test.cjs'],
 ]) {
   const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit', shell: false });
   if (result.error) throw result.error;
