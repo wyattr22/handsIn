@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": false,
+    "incremental": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": ".calendar-test-build",
+    "rootDir": "src",
+    "target": "ES2022"
+  },
+  "include": [
+    "src/contracts/coordination.ts",
+    "src/server/domain/coordination/**/*.ts",
+    "src/features/coordination/demo/fixtures.ts",
+    "src/features/coordination/calendarMath.ts"
+  ],
+  "exclude": ["node_modules", ".calendar-test-build"]
+}
