@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+  <title id="title">Illustrated portrait of June</title>
+  <rect width="160" height="160" rx="80" fill="#f0e3eb"/>
+  <path d="M38 70c0-34 17-52 43-52 29 0 44 20 42 54l-9 36H47Z" fill="#e8e8e3"/>
+  <circle cx="80" cy="67" r="34" fill="#c98d72"/>
+  <path d="M44 63c3-29 18-44 39-44 21 0 35 14 38 42-15-5-27-15-35-28-10 15-23 25-42 30Z" fill="#d9d9d2"/>
+  <path d="M25 160c6-38 25-58 55-58s50 20 55 58Z" fill="#8a5d78"/>
+  <circle cx="68" cy="68" r="3" fill="#3f3339"/><circle cx="94" cy="68" r="3" fill="#3f3339"/>
+  <path d="M69 84c8 7 17 7 24 0" fill="none" stroke="#804f42" stroke-width="3" stroke-linecap="round"/>
+</svg>
